@@ -8,10 +8,16 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "predev": "node scripts/check-node.mjs",
     "dev": "vite",
     "dev:mraid": "vite --mode applovin",
+    "prebuild": "node scripts/check-node.mjs",
     "build": "node scripts/build-all.ts",
     "typecheck": "tsc --noEmit",
+    "pretest": "node scripts/check-node.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preshowcase": "node scripts/check-node.mjs",
     "showcase": "node scripts/build-showcase.ts",
     "showcase:preview": "vite preview"
   },
@@ -26,6 +32,7 @@
     "qrcode": "^1.5.4",
     "typescript": "7.0.2",
     "vite": "8.3.0",
-    "vite-plugin-singlefile": "2.3.3"
+    "vite-plugin-singlefile": "2.3.3",
+    "vitest": "^5.0.0"
   }
 }

@@ -3,7 +3,7 @@
 A portfolio playable ad: a block puzzle where the blocks are jelly creatures.
 Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad network.
 
-> Work in progress. Day 1: project skeleton, network adapters, build pipeline.
+> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model (in progress).
 
 ## Commands
 
@@ -14,6 +14,7 @@ Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad
 | `npm run build` | Builds every network and checks each file against its upload limit |
 | `npm run build -- applovin meta` | Builds only the listed networks |
 | `npm run typecheck` | TypeScript check |
+| `npm test` | Unit tests for the game model and the scripted level |
 | `npm run showcase` | Assembles the showcase site in `site/` (run `npm run build` first) |
 | `npm run showcase:preview` | Serves `site/` on the local network; the QR code points to this machine |
 
@@ -50,6 +51,10 @@ Personal and day-specific copy on the page lives in `showcase/profile.ts`.
 - `src/core/clock.ts`: GSAP runs on the Pixi ticker, so pausing the ad freezes everything and hit-stop is one call.
 - `src/core/app.ts` + `build/pixiLean.ts`: WebGL renderer without `Application`, so the WebGPU and Canvas renderers,
   filters and accessibility never reach the bundle (619 KB -> 520 KB on the empty scene).
+- `src/game/model/`: the puzzle as plain TypeScript with no Pixi imports. `Game.place()` returns a `MoveResult`
+  describing everything that happened, and the view only animates that data.
+- `src/game/levels/level1.ts` + its test: the scripted session. Tests guarantee that intended moves clear 1, 2
+  and 3 lines, that the jar fills only on the last one, and that a wasted move ends in a near miss.
 - `src/core/fallback.ts`: HTML end card if WebGL fails to start or the context is lost.
 
 ## Asset credits

@@ -30,6 +30,7 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
 
       # Fails the workflow if any network build is over its upload limit.
       - run: npm run build
