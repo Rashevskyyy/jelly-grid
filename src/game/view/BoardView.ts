@@ -37,6 +37,8 @@ export class BoardView {
   private readonly blocksLayer = new Container();
   private readonly ghostLayer = new Container();
   private readonly blocks: Array<JellyBlock | null>;
+  private readonly ghosts: Sprite[] = [];
+  private ghostKey = '';
   /** Blocks still animating out after a clear: they keep wobbling until destroyed. */
   private readonly leaving = new Set<JellyBlock>();
 
@@ -44,6 +46,7 @@ export class BoardView {
     this.size = board.size;
     this.textures = textures;
     this.pixelSize = board.size * CELL;
+    this.center = { x: this.pixelSize / 2, y: this.pixelSize / 2 };
     this.blocks = new Array<JellyBlock | null>(board.size * board.size).fill(null);
 
     const frame = new Graphics()
@@ -62,9 +65,8 @@ export class BoardView {
     this.view.addChild(frame, emptyCells, this.ghostLayer, this.blocksLayer);
   }
 
-  get center(): PointData {
-    return { x: this.pixelSize / 2, y: this.pixelSize / 2 };
-  }
+  /** Centre of the board in its own coordinates. A fixed object, so reading it every frame is free. */
+  readonly center: PointData;
 
   cellCenter({ col, row }: GridPos): PointData {
     return { x: col * CELL + CELL / 2, y: row * CELL + CELL / 2 };
@@ -75,17 +77,31 @@ export class BoardView {
     return { col: Math.round(local.x / CELL), row: Math.round(local.y / CELL) };
   }
 
+  /**
+   * Called on every pointer move during a drag, so it allocates nothing: a small pool of ghost sprites
+   * is reused, and nothing changes at all while the snapped position stays the same.
+   */
   showGhost(piece: PieceDef, at: GridPos): void {
-    this.hideGhost();
-    for (const { col, row } of piece.cells) {
-      const ghost = new Sprite({ texture: this.textures.ghost, anchor: 0.5 });
-      ghost.position.copyFrom(this.cellCenter({ col: at.col + col, row: at.row + row }));
-      this.ghostLayer.addChild(ghost);
-    }
+    const key = `${piece.id}:${at.col}:${at.row}`;
+    if (key === this.ghostKey) return;
+    this.ghostKey = key;
+    piece.cells.forEach(({ col, row }, index) => {
+      let ghost = this.ghosts[index];
+      if (!ghost) {
+        ghost = new Sprite({ texture: this.textures.ghost, anchor: 0.5 });
+        this.ghosts.push(ghost);
+        this.ghostLayer.addChild(ghost);
+      }
+      ghost.visible = true;
+      ghost.position.set((at.col + col) * CELL + CELL / 2, (at.row + row) * CELL + CELL / 2);
+    });
+    for (let index = piece.cells.length; index < this.ghosts.length; index++) this.ghosts[index].visible = false;
   }
 
   hideGhost(): void {
-    this.ghostLayer.removeChildren().forEach((child) => child.destroy());
+    if (this.ghostKey === '') return;
+    this.ghostKey = '';
+    for (const ghost of this.ghosts) ghost.visible = false;
   }
 
   /** @param lookTarget point in board coordinates that every pair of eyes follows */

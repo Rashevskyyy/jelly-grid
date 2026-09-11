@@ -3,7 +3,7 @@ import { Container, Sprite, type PointData } from 'pixi.js';
 import type { ColorId } from '../model/types';
 import { BLOCK } from './constants';
 import { JELLY_HOP, JELLY_SQUASH, PUPIL_FOLLOW_RATE, PUPIL_REACH } from './jellyTuning';
-import { stepSpring, type SpringState } from './spring';
+import { isAtRest, stepSpring, type SpringState } from './spring';
 import type { GameTextures } from './textures';
 
 const EYE_Y = -4;
@@ -83,17 +83,21 @@ export class JellyBlock {
       }
     }
 
-    stepSpring(this.squash, JELLY_SQUASH, dt);
-    stepSpring(this.hop, JELLY_HOP, dt);
+    // This runs for every block on every frame, so it must not allocate: no iterators, no destructuring,
+    // and resting springs are skipped entirely (setting unchanged transforms would still dirty them).
+    if (settle(this.squash)) stepSpring(this.squash, JELLY_SQUASH, dt);
+    if (settle(this.hop)) stepSpring(this.hop, JELLY_HOP, dt);
     const squash = Math.max(-MAX_SQUASH, Math.min(MAX_SQUASH, this.squash.value));
     this.body.scale.set(1 + squash, 1 - squash * 0.9);
     this.body.position.y = BLOCK / 2 + this.hop.value;
 
     const follow = 1 - Math.exp(-PUPIL_FOLLOW_RATE * dt);
-    for (const [index, pupil] of this.pupils.entries()) {
-      const restX = index === 0 ? -EYE_SPACING : EYE_SPACING;
-      pupil.x += (restX + this.pupilTarget.x - pupil.x) * follow;
-      pupil.y += (this.pupilTarget.y - pupil.y) * follow;
+    for (let index = 0; index < this.pupils.length; index++) {
+      const pupil = this.pupils[index];
+      const dx = (index === 0 ? -EYE_SPACING : EYE_SPACING) + this.pupilTarget.x - pupil.x;
+      const dy = this.pupilTarget.y - pupil.y;
+      if (dx > 0.01 || dx < -0.01) pupil.x += dx * follow;
+      if (dy > 0.01 || dy < -0.01) pupil.y += dy * follow;
     }
   }
 
@@ -106,4 +110,12 @@ export class JellyBlock {
     this.squash.velocity += squash;
     this.hop.velocity += hop;
   }
+}
+
+/** Snaps a spring that has come to rest exactly to zero. Returns true if it still needs simulating. */
+function settle(state: SpringState): boolean {
+  if (!isAtRest(state)) return true;
+  state.value = 0;
+  state.velocity = 0;
+  return false;
 }

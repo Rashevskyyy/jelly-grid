@@ -10,6 +10,9 @@ import { Session } from './core/session';
 import { createNetwork, usesMraid } from './network';
 import { GameScene } from './scenes/GameScene';
 
+// Boot phases as Performance marks: visible in DevTools' Performance panel on a real device.
+performance.mark('jelly:script-start');
+
 function hideLoader(): void {
   const loader = document.getElementById('loader');
   if (!loader) return;
@@ -38,6 +41,7 @@ async function boot(): Promise<void> {
     showFallbackEndCard(network, `WebGL init failed: ${String(error)}`);
     return;
   }
+  performance.mark('jelly:renderer-ready');
   app.canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
     showFallbackEndCard(network, 'WebGL context lost');
@@ -48,10 +52,9 @@ async function boot(): Promise<void> {
   const clock = new GameClock(app.ticker);
   const session = new Session();
 
-  // Sound exists only after the first gesture. iOS may only accept the unlock on touchend, so try both.
+  // Sound exists only after the first gesture and re-unlocks on any later gesture (see AudioEngine).
   const audio = new AudioEngine();
-  session.onStart(() => audio.unlock());
-  window.addEventListener('touchend', () => audio.unlock(), { once: true });
+  audio.attachUnlock();
   const root = new Container();
   app.stage.addChild(root);
 
@@ -76,10 +79,18 @@ async function boot(): Promise<void> {
   });
 
   hideLoader();
+  performance.mark('jelly:first-frame-built');
 
   // 3. Ad is on screen: only now animations and gameplay may start.
   await network.viewable();
   scene.start();
+  performance.mark('jelly:interactive');
+
+  // Constant-false in ad builds, so the bundler drops the overlay from them entirely.
+  if (__NETWORK__ === 'web' && new URLSearchParams(location.search).has('debug')) {
+    const { mountDebugOverlay } = await import('./core/debugOverlay');
+    mountDebugOverlay(app.ticker);
+  }
 }
 
 boot().catch((error: unknown) => console.error('[boot]', error));

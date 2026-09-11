@@ -1,4 +1,4 @@
-import { Container, type PointData } from 'pixi.js';
+import { Container, Point, type PointData } from 'pixi.js';
 import type { PieceDef } from '../model/types';
 import { CELL } from './constants';
 import { JellyBlock } from './JellyBlock';
@@ -19,6 +19,8 @@ export class PieceView {
   private readonly wobble = new Container();
   private readonly blocks: JellyBlock[] = [];
   private readonly tilt: SpringState = { value: 0, velocity: 0 };
+  /** Reused every frame, so updating the eyes allocates nothing. */
+  private readonly localTarget = new Point();
 
   constructor(piece: PieceDef, textures: GameTextures) {
     this.piece = piece;
@@ -54,7 +56,7 @@ export class PieceView {
     this.wobble.rotation = this.tilt.value;
     this.wobble.scale.set(1 + breathe * 0.03);
 
-    const local = this.wobble.toLocal(lookTarget, scene);
+    const local = this.wobble.toLocal(lookTarget, scene, this.localTarget);
     for (const block of this.blocks) {
       block.lookAt(local);
       block.update(dt);

@@ -1,5 +1,5 @@
 import { gsap } from 'gsap';
-import { Container, Graphics, Rectangle, type FederatedPointerEvent, type PointData, type Renderer } from 'pixi.js';
+import { Container, Graphics, Point, Rectangle, type FederatedPointerEvent, type PointData, type Renderer } from 'pixi.js';
 import { THEME } from '../config';
 import type { Sfx } from '../audio/sfx';
 import type { GameClock } from '../core/clock';
@@ -99,6 +99,8 @@ export class GameScene implements Scene {
   private watchJarFor = 0;
   private readonly shake: ShakeState = { trauma: 0, time: 0 };
   private screenCenter = { x: 0, y: 0 };
+  /** Scratch points reused every frame and every pointer move: the game loop allocates nothing. */
+  private readonly scratch = { boardCenter: new Point(), jarMouth: new Point(), boardLocal: new Point(), snap: new Point() };
   /** Cells shown in the jar. Lags behind the model while particles are in the air. */
   private jarCount = 0;
   /** Seconds without input; the hint hand appears when this passes HINT delays. */
@@ -209,12 +211,12 @@ export class GameScene implements Scene {
     // the particles fly into the jar. Otherwise the board watches the tray and the tray watches the board,
     // which quietly points the player at the next move.
     const pointer = this.drag?.pointer ?? this.hoverPointer;
-    const jarMouth = this.jarMouth();
-    const boardCenter = this.world.toLocal(this.board.center, this.board.view);
+    const jarMouth = this.world.toLocal(this.jar.mouth, this.jar.view, this.scratch.jarMouth);
+    const boardCenter = this.world.toLocal(this.board.center, this.board.view, this.scratch.boardCenter);
     const trayCenter = this.slots[1] ?? boardCenter;
     const watching = this.watchJarFor > 0 && !this.drag ? jarMouth : null;
 
-    this.board.update(dt, this.board.view.toLocal(watching ?? pointer ?? trayCenter, this.world));
+    this.board.update(dt, this.board.view.toLocal(watching ?? pointer ?? trayCenter, this.world, this.scratch.boardLocal));
     this.jar.update(dt);
 
     this.pieces.forEach((piece, slot) => {
@@ -362,7 +364,7 @@ export class GameScene implements Scene {
     // Snap using the footprint at board scale, so the preview doesn't jump while the pick-up tween runs.
     const size = this.boardScale;
     const topLeft = { x: pointer.x - (piece.width * size) / 2, y: pointer.y - (piece.height + DRAG_LIFT) * size };
-    const at = this.board.snap(this.board.view.toLocal(topLeft, this.world));
+    const at = this.board.snap(this.board.view.toLocal(topLeft, this.world, this.scratch.snap));
     const valid = this.game.canPlace(drag.slot, at);
     drag.target = valid ? at : null;
     if (valid) this.board.showGhost(piece.piece, at);

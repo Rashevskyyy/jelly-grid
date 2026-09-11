@@ -295,13 +295,15 @@
 
         <h2>How it's built</h2>
         <p>
-          PixiJS v8 and GSAP in TypeScript, bundled by Vite into one self-contained HTML file per ad network. The game
-          talks to a single adapter interface, which hides MRAID, Google's ExitApi and Meta's FbPlayableAd.
+          The puzzle logic is plain TypeScript with unit tests, and the view only animates what a move returns. Blocks
+          sit on damped springs integrated with fixed substeps, so the jelly moves the same at 20 and 120 fps. GSAP,
+          springs and screen shake all run on one game clock, which makes hit-stop and pausing the ad a single call.
         </p>
         <p>
-          The WebGL renderer is created directly and Pixi's unused optional modules are stubbed out at build time, which
-          took the empty scene from 619 KB to 520 KB. GSAP runs on the Pixi ticker, so hiding the ad freezes every
-          animation in one place.
+          Every network build contains only its own API, and a preflight script fails the build on external resources or
+          a missing API. Graphics are drawn in code and sound is synthesized, so the build has no image or audio files.
+          It becomes interactive in about 0.7 s with the CPU throttled four times, and profiling cut garbage by 40%.
+          Open <a href="play/?debug">the playable with ?debug</a> for live frame times on your own device.
         </p>
 
         <footer>Made by {{AUTHOR}}. <a href="{{REPO_URL}}">Source on GitHub</a>. Built {{BUILT_AT}}.</footer>

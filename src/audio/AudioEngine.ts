@@ -15,8 +15,14 @@ export interface ToneOptions {
  * Tiny Web Audio synth. Every sound is generated, so audio adds no bytes to the build.
  *
  * Ad network rules it enforces:
- * - no AudioContext exists until the first user gesture (`unlock`), so nothing can play before interaction;
+ * - no AudioContext exists until the first user gesture, so nothing can play before interaction;
  * - `setActive(false)` suspends the context when the ad is hidden or closed.
+ *
+ * Mobile quirks it survives:
+ * - touch browsers only count pointerup/touchend/click as a gesture that may start audio, not pointerdown;
+ * - iOS only fully unlocks if something actually plays inside that gesture (a one-sample silent buffer);
+ * - iOS moves the context to "interrupted" after app switches, calls or the notification shade, and only a new
+ *   gesture brings it back. So `attachUnlock` keeps listening for the whole session, not just once.
  */
 export class AudioEngine {
   private context: AudioContext | null = null;
@@ -24,8 +30,21 @@ export class AudioEngine {
   private active = true;
   private readonly lastPlayed = new Map<string, number>();
 
-  /** Call from inside a user gesture. Safe to call repeatedly. */
+  /** Listens for gestures for the whole session and (re)unlocks audio whenever it isn't running. */
+  attachUnlock(target: EventTarget = window): void {
+    const onGesture = (event: Event) => {
+      // A mouse press is a valid gesture everywhere; a touch press is not, its release is.
+      if (event.type === 'pointerdown' && (event as PointerEvent).pointerType !== 'mouse') return;
+      this.unlock();
+    };
+    for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+      target.addEventListener(type, onGesture, { capture: true, passive: true });
+    }
+  }
+
+  /** Must run inside a user gesture. Cheap when audio is already running. */
   unlock(): void {
+    if (!this.active) return;
     if (!this.context) {
       const Context = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Context) return;
@@ -34,18 +53,31 @@ export class AudioEngine {
       this.master.gain.value = 0.6;
       this.master.connect(this.context.destination);
     }
-    if (this.active && this.context.state !== 'running') void this.context.resume();
+    // "interrupted" is an iOS-only state missing from the TypeScript union, hence the string comparison.
+    if ((this.context.state as string) === 'running') return;
+    void this.context.resume().catch(() => undefined);
+    this.playSilence();
   }
 
   setActive(active: boolean): void {
     this.active = active;
     if (!this.context) return;
-    if (active) void this.context.resume();
-    else void this.context.suspend();
+    // Resuming here can fail outside a gesture on iOS; the next tap retries through attachUnlock.
+    if (active) void this.context.resume().catch(() => undefined);
+    else void this.context.suspend().catch(() => undefined);
   }
 
   get ready(): boolean {
     return this.context?.state === 'running' && this.active;
+  }
+
+  private playSilence(): void {
+    const context = this.context;
+    if (!context) return;
+    const source = context.createBufferSource();
+    source.buffer = context.createBuffer(1, 1, 22050);
+    source.connect(context.destination);
+    source.start(0);
   }
 
   /**

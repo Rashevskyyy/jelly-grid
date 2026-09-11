@@ -2,7 +2,7 @@ export const STORE_URLS = {
   ios: 'https://apps.apple.com/app/id0000000000',
   android: 'https://play.google.com/store/apps/details?id=com.example.jellygrid',
   /** The showcase build has no store: the CTA leads to the project repo (set by CI) instead. */
-  web: import.meta.env.VITE_REPO_URL ?? 'https://github.com/your-name/jelly-grid',
+  web: import.meta.env.VITE_REPO_URL ?? 'https://github.com/Rashevskyyy/jelly-grid',
 } as const;
 
 /**

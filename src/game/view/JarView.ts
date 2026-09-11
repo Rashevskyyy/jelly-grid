@@ -39,9 +39,7 @@ export class JarView {
   }
 
   /** Where particles enter, in the jar's local coordinates. */
-  get mouth(): PointData {
-    return { x: 0, y: -BODY_HEIGHT - 10 };
-  }
+  readonly mouth: PointData = { x: 0, y: -BODY_HEIGHT - 10 };
 
   /** 0..1 */
   setLevel(value: number): void {

@@ -58,19 +58,23 @@ export class HintView {
       this.ghost.scale.set(pick.scale);
     };
 
+    const reset = () => {
+      finger.x = plan.from.x;
+      finger.y = plan.from.y + 40;
+      pick.scale = plan.trayScale;
+      pick.lift = 0;
+      this.hand.alpha = 0;
+      this.hand.scale.set(0.9);
+      this.ghost.alpha = 0;
+      place();
+    };
+    // Reset synchronously: the timeline's first call only runs on the next tick, and without this the
+    // hand would render for one frame at 0,0 in the top-left corner.
+    reset();
     this.view.visible = true;
     this.timeline = gsap
       .timeline({ repeat: -1, repeatDelay: 0.45 })
-      .call(() => {
-        finger.x = plan.from.x;
-        finger.y = plan.from.y + 40;
-        pick.scale = plan.trayScale;
-        pick.lift = 0;
-        this.hand.alpha = 0;
-        this.hand.scale.set(0.9);
-        this.ghost.alpha = 0;
-        place();
-      })
+      .call(reset)
       .to(this.hand, { alpha: 1, duration: 0.2 })
       .to(finger, { y: plan.from.y, duration: 0.25, ease: 'power2.out', onUpdate: place }, '<')
       .to(this.hand.scale, { x: 0.78, y: 0.78, duration: 0.12, ease: 'power2.in' }) // press
