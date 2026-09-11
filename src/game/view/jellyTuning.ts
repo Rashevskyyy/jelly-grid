@@ -1,3 +1,4 @@
+import { COPY } from '../../copy';
 import type { ShakeConfig } from './motion';
 import type { SpringConfig } from './spring';
 
@@ -69,10 +70,10 @@ export const SHAKE: ShakeConfig = { maxOffset: 22, maxRotation: 0.025, decayPerS
 
 /** What a move clearing N lines feels like. The last entry covers anything bigger. */
 export const COMBO = [
-  { lines: 1, label: 'Sweet!', trauma: 0.4, hitStopMs: 0 },
-  { lines: 2, label: 'Double!', trauma: 0.6, hitStopMs: 70 },
-  { lines: 3, label: 'Triple!', trauma: 0.85, hitStopMs: 120 },
-  { lines: 4, label: 'Unreal!', trauma: 1, hitStopMs: 150 },
+  { lines: 1, label: COPY.combo[0], trauma: 0.4, hitStopMs: 0 },
+  { lines: 2, label: COPY.combo[1], trauma: 0.6, hitStopMs: 70 },
+  { lines: 3, label: COPY.combo[2], trauma: 0.85, hitStopMs: 120 },
+  { lines: 4, label: COPY.combo[3], trauma: 1, hitStopMs: 150 },
 ] as const;
 
 export function comboFor(lines: number): (typeof COMBO)[number] {
@@ -81,3 +82,6 @@ export function comboFor(lines: number): (typeof COMBO)[number] {
 
 /** Seconds the board keeps looking at the jar after a clear, following the particles. */
 export const WATCH_JAR_SECONDS = 1.1;
+
+/** Idle seconds before the tutorial hand appears: quickly at the start, patiently after that. */
+export const HINT = { firstDelay: 1.2, repeatDelay: 3 } as const;

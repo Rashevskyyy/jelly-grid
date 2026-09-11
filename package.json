@@ -13,6 +13,7 @@
     "dev:mraid": "vite --mode applovin",
     "prebuild": "node scripts/check-node.mjs",
     "build": "node scripts/build-all.ts",
+    "fonts": "node scripts/subset-font.ts",
     "typecheck": "tsc --noEmit",
     "pretest": "node scripts/check-node.mjs",
     "test": "vitest run",
@@ -26,10 +27,12 @@
     "pixi.js": "8.20.1"
   },
   "devDependencies": {
+    "@fontsource/lilita-one": "^5.3.0",
     "@types/node": "^22.19.0",
     "@types/qrcode": "^1.5.6",
     "fflate": "^0.8.2",
     "qrcode": "^1.5.4",
+    "subset-font": "^2.7.0",
     "typescript": "7.0.2",
     "vite": "8.3.0",
     "vite-plugin-singlefile": "2.3.3",

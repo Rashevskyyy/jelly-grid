@@ -10,6 +10,7 @@ import { zipSync } from 'fflate';
 import { build } from 'vite';
 import { NETWORKS, SIZE_BUDGET_BYTES, isNetwork, type Network } from '../build/networks.ts';
 import { REPORT_PATH, type BuildReport, type BuildReportRow } from '../build/report.ts';
+import { buildFontSubset } from './subset-font.ts';
 
 const args = process.argv.slice(2);
 const unknown = args.filter((arg) => !isNetwork(arg));
@@ -18,6 +19,8 @@ if (unknown.length > 0) {
   process.exit(1);
 }
 const targets = (args.length > 0 ? args : Object.keys(NETWORKS)) as Network[];
+
+await buildFontSubset(); // copy may have changed since the subset was last generated
 
 const rows: BuildReportRow[] = [];
 for (const network of targets) {

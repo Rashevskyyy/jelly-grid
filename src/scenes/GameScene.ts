@@ -1,6 +1,7 @@
 import { gsap } from 'gsap';
 import { Container, Graphics, Rectangle, type FederatedPointerEvent, type PointData, type Renderer } from 'pixi.js';
 import { THEME } from '../config';
+import type { Sfx } from '../audio/sfx';
 import type { GameClock } from '../core/clock';
 import type { Layout } from '../core/layout';
 import type { Session } from '../core/session';
@@ -11,6 +12,7 @@ import { BoardView, type MovePlayback } from '../game/view/BoardView';
 import { ComboText } from '../game/view/ComboText';
 import { CELL, DRAG_LIFT } from '../game/view/constants';
 import { EndOverlay, type EndReason } from '../game/view/EndOverlay';
+import { HintView } from '../game/view/HintView';
 import { JarView } from '../game/view/JarView';
 import {
   BLINK_INTERVAL,
@@ -18,6 +20,7 @@ import {
   COMBO,
   DRAG_TILT_MAX,
   DRAG_TILT_PER_SPEED,
+  HINT,
   IMPULSE,
   SHAKE,
   WATCH_JAR_SECONDS,
@@ -34,6 +37,7 @@ export interface GameSceneDeps {
   session: Session;
   clock: GameClock;
   renderer: Renderer;
+  sfx: Sfx;
 }
 
 /** Tray slot in world coordinates: centre, touch area and the scale pieces rest at. */
@@ -59,7 +63,7 @@ const END_DELAY = 0.35;
 /**
  * Scene graph:
  *   view (input hit area)
- *   ├─ world (shakes)  backdrop, board, jar, tray slots, pieces, particles, combo text
+ *   ├─ world (shakes)  backdrop, board, jar, tray slots, pieces, particles, combo text, hint hand
  *   └─ endOverlay      stays still while the world shakes
  * All gameplay coordinates are in `world` space.
  */
@@ -76,6 +80,7 @@ export class GameScene implements Scene {
   private readonly piecesLayer = new Container();
   private readonly particles: ParticleFlight;
   private readonly combo = new ComboText();
+  private readonly hint: HintView;
   private readonly endOverlay: EndOverlay;
   private slots: SlotLayout[] = [];
   /** Board and dragged pieces share this scale. Landscape shrinks it to leave room for the drag lift. */
@@ -96,6 +101,11 @@ export class GameScene implements Scene {
   private screenCenter = { x: 0, y: 0 };
   /** Cells shown in the jar. Lags behind the model while particles are in the air. */
   private jarCount = 0;
+  /** Seconds without input; the hint hand appears when this passes HINT delays. */
+  private idleFor = 0;
+  private hintsShown = 0;
+  /** Game time until the last move's animations finish. No hint while the board is still settling. */
+  private busyUntil = 0;
 
   constructor(deps: GameSceneDeps) {
     this.deps = deps;
@@ -103,6 +113,7 @@ export class GameScene implements Scene {
 
     this.board = new BoardView(this.game.board, textures);
     this.particles = new ParticleFlight(textures);
+    this.hint = new HintView(textures);
     this.pieces = this.game.tray.map((piece) => (piece ? new PieceView(piece, textures) : null));
     this.endOverlay = new EndOverlay(() => {
       if (deps.session.canOpenStore) deps.network.openStore();
@@ -124,11 +135,12 @@ export class GameScene implements Scene {
       this.world.addChild(area);
       if (piece) this.piecesLayer.addChild(piece.view);
     });
-    this.world.addChild(this.piecesLayer, this.particles.view, this.combo.view);
+    this.world.addChild(this.piecesLayer, this.particles.view, this.combo.view, this.hint.view);
     this.view.addChild(this.world, this.endOverlay.view);
 
     this.view.on('globalpointermove', (event) => this.onPointerMove(event));
     this.view.on('pointerup', (event) => this.onPointerUp(event));
+    this.view.on('pointerdown', () => this.dismissHint());
     deps.session.onTimeout(() => this.finish('timeout', 0));
     deps.clock.onUpdate((dt) => this.update(dt));
   }
@@ -139,6 +151,7 @@ export class GameScene implements Scene {
 
   resize(layout: Layout): void {
     this.cancelDrag();
+    this.dismissHint();
     const { safe, portrait, viewWidth, viewHeight } = layout;
 
     // The world shakes around the screen centre, so rotation never swings from a corner.
@@ -206,6 +219,13 @@ export class GameScene implements Scene {
       piece.update(dt, watching ?? pointer ?? boardCenter, this.world, tilt, breathe);
     });
 
+    const canHint = this.started && !this.finished && !this.drag && this.time >= this.busyUntil;
+    if (!canHint) this.idleFor = 0;
+    else if (!this.hint.playing) {
+      this.idleFor += dt;
+      if (this.idleFor >= (this.hintsShown === 0 ? HINT.firstDelay : HINT.repeatDelay)) this.showHint();
+    }
+
     this.nextBlink -= dt;
     if (this.nextBlink <= 0) {
       this.nextBlink = BLINK_INTERVAL * (0.5 + Math.random());
@@ -227,6 +247,7 @@ export class GameScene implements Scene {
     this.dragSpeedX = 0;
 
     piece.impulse(IMPULSE.pickUp.squash, IMPULSE.pickUp.hop, 0.02);
+    this.deps.sfx.pickUp();
     const size = this.boardScale;
     gsap.to(piece.view.scale, { x: size, y: size, duration: 0.12, ease: 'power2.out', onUpdate: () => this.followPointer() });
     this.followPointer();
@@ -275,6 +296,7 @@ export class GameScene implements Scene {
       ease: 'power2.in',
       onComplete: () => {
         piece.destroy();
+        this.deps.sfx.land();
         this.playMove(move, this.board.applyMove(move));
       },
     });
@@ -293,8 +315,10 @@ export class GameScene implements Scene {
         if (combo.hitStopMs > 0) this.deps.clock.hitStop(combo.hitStopMs);
         addTrauma(this.shake, combo.trauma);
         this.combo.show(combo.label, center, strength);
+        this.deps.sfx.combo(move.lines);
         this.watchJarFor = WATCH_JAR_SECONDS;
       });
+      playback.popped.forEach(({ delay }, index) => gsap.delayedCall(delay, () => this.deps.sfx.pop(index)));
 
       const requests = playback.popped.map(({ position, color, delay }) => ({
         from: this.world.toLocal(position, this.board.view),
@@ -305,12 +329,17 @@ export class GameScene implements Scene {
         this.jarCount += 1;
         this.jar.setLevel(this.jarCount / this.game.goal);
         this.jar.bump();
+        this.deps.sfx.collect(this.jarCount / this.game.goal);
       });
       endsIn = Math.max(endsIn, flight);
     }
 
+    this.busyUntil = this.time + endsIn;
     if (move.status === 'won') {
-      gsap.delayedCall(endsIn, () => this.jar.celebrate());
+      gsap.delayedCall(endsIn, () => {
+        this.jar.celebrate();
+        this.deps.sfx.win();
+      });
       this.finish('won', endsIn + END_DELAY);
     }
     if (move.status === 'lost') this.finish('lost', endsIn + END_DELAY);
@@ -348,7 +377,10 @@ export class GameScene implements Scene {
       y: home.y,
       duration,
       ease: 'back.out(1.6)',
-      onComplete: () => piece.impulse(IMPULSE.bounceBack.squash, IMPULSE.bounceBack.hop),
+      onComplete: () => {
+        piece.impulse(IMPULSE.bounceBack.squash, IMPULSE.bounceBack.hop);
+        this.deps.sfx.bounceBack();
+      },
     });
     gsap.to(piece.view.scale, { x: home.scale, y: home.scale, duration, ease: 'back.out(1.6)' });
   }
@@ -365,8 +397,42 @@ export class GameScene implements Scene {
     if (this.finished) return;
     this.finished = true;
     this.cancelDrag();
+    this.dismissHint();
     this.deps.session.cancelTimeout();
-    gsap.delayedCall(delay, () => this.endOverlay.show(reason));
+    gsap.delayedCall(delay, () => {
+      if (reason !== 'won') this.deps.sfx.lose();
+      this.endOverlay.show(reason);
+    });
+  }
+
+  /** Demonstrates the next move with the hand, using the same finger maths as a real drag. */
+  private showHint(): void {
+    const hint = this.game.hint();
+    const piece = hint ? this.game.tray[hint.slot] : null;
+    const view = hint ? this.pieces[hint.slot] : null;
+    const slot = hint ? this.slots[hint.slot] : undefined;
+    if (!hint || !piece || !view || !slot) return;
+
+    const size = this.boardScale;
+    const topLeft = this.world.toLocal({ x: hint.at.col * CELL, y: hint.at.row * CELL }, this.board.view);
+    this.hintsShown += 1;
+    this.hint.play({
+      piece,
+      from: { x: slot.x, y: slot.y },
+      to: { x: topLeft.x + (view.width * size) / 2, y: topLeft.y + (view.height + DRAG_LIFT) * size },
+      trayScale: slot.scale,
+      boardScale: size,
+      onRelease: () => this.board.showGhost(piece, hint.at),
+      onReset: () => this.board.hideGhost(),
+    });
+  }
+
+  private dismissHint(): void {
+    this.idleFor = 0;
+    if (!this.hint.playing) return;
+    this.hint.stop();
+    this.board.hideGhost();
+    this.followPointer(); // a drag that started on this same tap keeps its own preview
   }
 
   private jarMouth(): PointData {

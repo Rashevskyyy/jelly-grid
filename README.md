@@ -3,7 +3,7 @@
 A portfolio playable ad: a block puzzle where the blocks are jelly creatures.
 Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad network.
 
-> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop. Day 3: jelly feel and line-clear payoff.
+> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop. Day 3: jelly feel and line-clear payoff. Day 4: hint hand, sound, font.
 
 ## Commands
 
@@ -13,6 +13,7 @@ Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad
 | `npm run dev:mraid` | Dev server with a mock MRAID container (ready, viewable, `mraid.open`) |
 | `npm run build` | Builds every network and checks each file against its upload limit |
 | `npm run build -- applovin meta` | Builds only the listed networks |
+| `npm run fonts` | Regenerates the font subset from `src/copy.ts` (also runs before every build) |
 | `npm run typecheck` | TypeScript check |
 | `npm test` | Unit tests for the game model and the scripted level |
 | `npm run showcase` | Assembles the showcase site in `site/` (run `npm run build` first) |
@@ -68,8 +69,17 @@ Personal and day-specific copy on the page lives in `showcase/profile.ts`.
   so particles still land if the phone rotates mid-flight.
 - `src/game/view/ComboText.ts`: labels are created and rasterised at startup, so a combo never hitches.
 - Scene graph splits a shaking `world` from the still end overlay; hit-stop and shake both run on the game clock.
+- `src/game/view/HintView.ts`: the tutorial hand replays the scripted move with the same finger maths as a
+  real drag, appears after 1.2 s idle at the start and 3 s later on, and vanishes on any touch.
+- `src/audio/`: every sound is synthesized with Web Audio, so audio costs zero bytes. No AudioContext exists
+  before the first gesture, and it is suspended whenever the ad is hidden.
+- `src/copy.ts` + `scripts/subset-font.ts`: the display font ships only the glyphs used on screen
+  (10.7 KB -> 2.4 KB), regenerated on every build so new copy can never miss a glyph.
 - `src/core/fallback.ts`: HTML end card if WebGL fails to start or the context is lost.
 
 ## Asset credits
 
-No third-party assets yet.
+- Font: [Lilita One](https://fonts.google.com/specimen/Lilita+One) by Juan Montoreano, SIL Open Font License 1.1
+  (`src/assets/fonts/OFL-LilitaOne.txt`), subset for this project.
+- Graphics: drawn in code at startup (blocks, eyes, jar, tutorial hand). No image files.
+- Sound: synthesized at runtime with Web Audio. No audio files.

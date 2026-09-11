@@ -1,16 +1,12 @@
 import { gsap } from 'gsap';
 import { Container, Graphics, Text, type PointData } from 'pixi.js';
 import { THEME } from '../../config';
+import { COPY } from '../../copy';
+import { DISPLAY_FONT } from '../../core/fonts';
 
 export type EndReason = 'won' | 'lost' | 'timeout';
 
-const TITLES: Record<EndReason, string> = {
-  won: 'Level complete',
-  lost: 'So close!',
-  timeout: 'Almost there',
-};
-
-const FONT = 'system-ui, -apple-system, Roboto, sans-serif';
+const TITLES: Record<EndReason, string> = COPY.end;
 
 /** Temporary end screen: title and CTA. The real end card arrives on day 5. */
 export class EndOverlay {
@@ -19,7 +15,7 @@ export class EndOverlay {
   private readonly content = new Container();
   private readonly title = new Text({
     text: '',
-    style: { fontFamily: FONT, fontSize: 64, fontWeight: '800', fill: THEME.cream, align: 'center' },
+    style: { fontFamily: DISPLAY_FONT, fontSize: 76, fill: THEME.cream, align: 'center' },
   });
   private readonly cta = new Container();
 
@@ -29,8 +25,8 @@ export class EndOverlay {
 
     const pill = new Graphics().roundRect(-190, -52, 380, 104, 52).fill(THEME.blocks[4]);
     const label = new Text({
-      text: 'Play now',
-      style: { fontFamily: FONT, fontSize: 44, fontWeight: '800', fill: THEME.backgroundDeep },
+      text: COPY.cta,
+      style: { fontFamily: DISPLAY_FONT, fontSize: 50, fill: THEME.backgroundDeep },
     });
     label.anchor.set(0.5);
     this.cta.addChild(pill, label);

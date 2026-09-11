@@ -1,9 +1,9 @@
 import { gsap } from 'gsap';
 import { Container, Text, type PointData } from 'pixi.js';
 import { THEME } from '../../config';
+import { DISPLAY_FONT } from '../../core/fonts';
 import { COMBO } from './jellyTuning';
 
-const FONT = 'system-ui, -apple-system, Roboto, sans-serif';
 const HIDDEN_ALPHA = 0.001;
 
 /**
@@ -20,9 +20,8 @@ export class ComboText {
       const text = new Text({
         text: label,
         style: {
-          fontFamily: FONT,
-          fontSize: 96,
-          fontWeight: '900',
+          fontFamily: DISPLAY_FONT,
+          fontSize: 100,
           fill: THEME.blocks[4],
           stroke: { color: THEME.backgroundDeep, width: 14, join: 'round' },
         },
