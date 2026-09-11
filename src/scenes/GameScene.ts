@@ -11,7 +11,7 @@ import type { GridPos } from '../game/model/types';
 import { BoardView, type MovePlayback } from '../game/view/BoardView';
 import { ComboText } from '../game/view/ComboText';
 import { CELL, DRAG_LIFT } from '../game/view/constants';
-import { EndOverlay, type EndReason } from '../game/view/EndOverlay';
+import { EndCard, type EndReason } from '../game/view/EndCard';
 import { HintView } from '../game/view/HintView';
 import { JarView } from '../game/view/JarView';
 import {
@@ -64,7 +64,7 @@ const END_DELAY = 0.35;
  * Scene graph:
  *   view (input hit area)
  *   ├─ world (shakes)  backdrop, board, jar, tray slots, pieces, particles, combo text, hint hand
- *   └─ endOverlay      stays still while the world shakes
+ *   └─ endCard         stays still while the world shakes
  * All gameplay coordinates are in `world` space.
  */
 export class GameScene implements Scene {
@@ -81,7 +81,7 @@ export class GameScene implements Scene {
   private readonly particles: ParticleFlight;
   private readonly combo = new ComboText();
   private readonly hint: HintView;
-  private readonly endOverlay: EndOverlay;
+  private readonly endCard: EndCard;
   private slots: SlotLayout[] = [];
   /** Board and dragged pieces share this scale. Landscape shrinks it to leave room for the drag lift. */
   private boardScale = 1;
@@ -115,9 +115,13 @@ export class GameScene implements Scene {
     this.particles = new ParticleFlight(textures);
     this.hint = new HintView(textures);
     this.pieces = this.game.tray.map((piece) => (piece ? new PieceView(piece, textures) : null));
-    this.endOverlay = new EndOverlay(() => {
-      if (deps.session.canOpenStore) deps.network.openStore();
-    });
+    this.endCard = new EndCard(
+      textures,
+      { drop: (index) => deps.sfx.pop(index * 4), ctaAppear: () => deps.sfx.pickUp() },
+      () => {
+        if (deps.session.canOpenStore) deps.network.openStore();
+      },
+    );
 
     // Only the tray slots and the end overlay take input. Everything decorative is excluded from hit testing:
     // otherwise a block sprite under the finger resolves to the scene and the slot never sees the tap.
@@ -136,7 +140,7 @@ export class GameScene implements Scene {
       if (piece) this.piecesLayer.addChild(piece.view);
     });
     this.world.addChild(this.piecesLayer, this.particles.view, this.combo.view, this.hint.view);
-    this.view.addChild(this.world, this.endOverlay.view);
+    this.view.addChild(this.world, this.endCard.view);
 
     this.view.on('globalpointermove', (event) => this.onPointerMove(event));
     this.view.on('pointerup', (event) => this.onPointerUp(event));
@@ -187,11 +191,13 @@ export class GameScene implements Scene {
       if (piece) this.putHome(index, piece, 0);
     });
 
-    this.endOverlay.resize(viewWidth, viewHeight, { x: safe.x + safe.width / 2, y: safe.y + safe.height / 2 });
+    this.endCard.resize(layout);
   }
 
   private update(dt: number): void {
     this.time += dt;
+    this.endCard.update(dt);
+    if (this.endCard.covering) return; // nothing underneath is visible any more
     this.dragSpeedX *= Math.exp(-8 * dt); // the tilt relaxes as soon as the finger stops
     this.watchJarFor = Math.max(0, this.watchJarFor - dt);
 
@@ -401,7 +407,7 @@ export class GameScene implements Scene {
     this.deps.session.cancelTimeout();
     gsap.delayedCall(delay, () => {
       if (reason !== 'won') this.deps.sfx.lose();
-      this.endOverlay.show(reason);
+      this.endCard.show(reason);
     });
   }
 

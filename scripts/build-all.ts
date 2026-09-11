@@ -59,3 +59,9 @@ const report: BuildReport = { builtAt: new Date().toISOString(), rows };
 writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`);
 
 if (failed) process.exitCode = 1;
+
+// Only meaningful when every network was built.
+if (args.length === 0) {
+  console.log('');
+  await import('./check-builds.ts');
+}

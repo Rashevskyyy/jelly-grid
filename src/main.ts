@@ -7,7 +7,7 @@ import { showFallbackEndCard } from './core/fallback';
 import { loadFonts } from './core/fonts';
 import { computeLayout } from './core/layout';
 import { Session } from './core/session';
-import { createNetwork, MRAID_NETWORKS } from './network';
+import { createNetwork, usesMraid } from './network';
 import { GameScene } from './scenes/GameScene';
 
 function hideLoader(): void {
@@ -19,13 +19,13 @@ function hideLoader(): void {
 }
 
 async function boot(): Promise<void> {
-  if (import.meta.env.DEV && MRAID_NETWORKS.includes(__NETWORK__)) {
+  if (import.meta.env.DEV && usesMraid()) {
     const { installMraidMock } = await import('./dev/mraidMock');
     installMraidMock();
   }
 
   // 1. Container ready: now it is safe to read sizes and call the network API.
-  const network = createNetwork(__NETWORK__);
+  const network = createNetwork();
   await network.ready();
 
   const host = document.getElementById('app');

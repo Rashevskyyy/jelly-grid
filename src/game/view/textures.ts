@@ -9,6 +9,8 @@ export interface GameTextures {
   readonly pupil: Texture;
   readonly ghost: Texture;
   readonly emptyCell: Texture;
+  /** Soft sunburst behind the end card characters. */
+  readonly rays: Texture;
   /** Tutorial hand. `tip` is the anchor that puts the fingertip exactly on the sprite position. */
   readonly hand: { texture: Texture; tip: PointData };
 }
@@ -49,7 +51,20 @@ export function createGameTextures(renderer: Renderer): GameTextures {
   const eyeWhite = bake(new Graphics().circle(0, 0, 10).fill(0xffffff));
   const pupil = bake(new Graphics().circle(0, 0, 5).fill(THEME.backgroundDeep));
 
-  return { blocks, eyeWhite, pupil, ghost, emptyCell, hand: bakeHand(renderer) };
+  // Half resolution is plenty for a soft, slowly rotating background shape.
+  const rayCount = 14;
+  const rayRadius = 900;
+  const raysShape = new Graphics();
+  for (let i = 0; i < rayCount; i++) {
+    const a = (i / rayCount) * Math.PI * 2;
+    const b = a + Math.PI / rayCount;
+    raysShape.poly([0, 0, Math.cos(a) * rayRadius, Math.sin(a) * rayRadius, Math.cos(b) * rayRadius, Math.sin(b) * rayRadius]);
+  }
+  raysShape.fill({ color: 0xffffff, alpha: 0.07 });
+  const rays = renderer.generateTexture({ target: raysShape, resolution: 0.5 });
+  raysShape.destroy();
+
+  return { blocks, eyeWhite, pupil, ghost, emptyCell, rays, hand: bakeHand(renderer) };
 }
 
 /** A cartoon pointing hand drawn from rounded shapes, fingertip at 0,0. */

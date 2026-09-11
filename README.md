@@ -3,7 +3,7 @@
 A portfolio playable ad: a block puzzle where the blocks are jelly creatures.
 Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad network.
 
-> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop. Day 3: jelly feel and line-clear payoff. Day 4: hint hand, sound, font.
+> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop. Day 3: jelly feel and line-clear payoff. Day 4: hint hand, sound, font. Day 5: end card and network preflight.
 
 ## Commands
 
@@ -32,6 +32,20 @@ then the showcase site is published to GitHub Pages.
 - `/builds/` holds the upload-ready file for every network.
 
 Personal and day-specific copy on the page lives in `showcase/profile.ts`.
+
+## Testing in the networks' own tools
+
+`npm run build` checks what can be checked statically. Before uploading anywhere, also run each build through
+the network's tool:
+
+- **AppLovin**: upload `dist/applovin/index.html` to [Playable Preview](https://p.applov.in/playablePreview?create=1&qr=1),
+  play to the end, tap the CTA and confirm the "successful click" message. Scan the QR code with the
+  AppLovin Playable Preview app (iOS / Android) to test on a real phone.
+- **Google Ads**: upload `dist/google.zip` to the [HTML5 validator](https://h5validator.appspot.com/adwords/asset)
+  with **Select for App Campaigns** checked; the default display-ad mode reports warnings that don't apply.
+- **Meta**: load `dist/meta/index.html` in Meta's Playable Preview Tool and confirm the CTA fires.
+- **Unity Ads / ironSource**: no public upload tool; the MRAID behaviour is covered by `npm run dev:mraid`
+  and the AppLovin preview, which uses the same adapter.
 
 ## Build targets
 
@@ -75,6 +89,11 @@ Personal and day-specific copy on the page lives in `showcase/profile.ts`.
   before the first gesture, and it is suspended whenever the ad is hidden.
 - `src/copy.ts` + `scripts/subset-font.ts`: the display font ships only the glyphs used on screen
   (10.7 KB -> 2.4 KB), regenerated on every build so new copy can never miss a glyph.
+- `src/game/view/EndCard.ts`: full-screen end card outside the shaking world. Characters drop in with the same
+  jelly springs, the CTA pulses, and the whole card is a single tap target.
+- `src/network/index.ts`: the adapter is chosen at build time, so each build contains only its own network's API.
+- `scripts/check-builds.ts`: runs after every full build. Fails on extra files, external resources, a missing
+  or foreign network API, or a missing orientation tag.
 - `src/core/fallback.ts`: HTML end card if WebGL fails to start or the context is lost.
 
 ## Asset credits

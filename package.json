@@ -8,7 +8,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "predev": "node scripts/check-node.mjs",
+    "predev": "node scripts/check-node.mjs && node scripts/subset-font.ts",
     "dev": "vite",
     "dev:mraid": "vite --mode applovin",
     "prebuild": "node scripts/check-node.mjs",

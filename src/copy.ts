@@ -11,4 +11,5 @@ export const COPY = {
   },
   cta: 'Play now',
   title: 'Jelly Grid',
+  tagline: 'Squish lines. Fill the jar.',
 } as const;
