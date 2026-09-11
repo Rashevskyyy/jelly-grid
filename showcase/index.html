@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jelly Grid, a playable ad by {{AUTHOR}}</title>
+    <meta name="description" content="{{LEDE}}" />
+    <script>
+      // Phones go straight to the full-screen playable. Add ?about to read this page on a phone.
+      (function () {
+        var small = Math.min(screen.width, screen.height) < 600;
+        var touch = window.matchMedia('(pointer: coarse)').matches;
+        if (small && touch && location.search.indexOf('about') === -1) location.replace('play/');
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&display=swap"
+    />
+    <style>
+      :root {
+        --bg: #efe9f7;
+        --ink: #2a1d45;
+        --ink-soft: #5e5277;
+        --line: rgba(42, 29, 69, 0.16);
+        --jelly: #ff5a7a;
+        --lemon: #ffe15a;
+        --screen: #3a2a5c;
+        --bezel: #fbf9fe;
+        --bounce: cubic-bezier(0.34, 1.45, 0.5, 1);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+        font-size: 17px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--ink);
+        text-decoration-thickness: 1.5px;
+        text-underline-offset: 3px;
+      }
+      a:hover {
+        text-decoration-color: var(--jelly);
+      }
+      a:focus-visible,
+      button:focus-visible {
+        outline: 3px solid var(--jelly);
+        outline-offset: 3px;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 34rem);
+        gap: clamp(2rem, 6vw, 6rem);
+        max-width: 80rem;
+        margin: 0 auto;
+        padding: clamp(1.5rem, 4vw, 4rem);
+        align-items: start;
+      }
+
+      /* Live playable */
+      .stage {
+        position: sticky;
+        top: 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.25rem;
+      }
+      /* A light phone body, so the game's dark edges never blend into the bezel. */
+      .device {
+        background: var(--bezel);
+        border: 1.5px solid var(--line);
+        transition:
+          width 0.5s var(--bounce),
+          height 0.5s var(--bounce);
+      }
+      .screen {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--screen);
+      }
+      .screen iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        border: 0;
+        transform-origin: 0 0;
+      }
+      .controls {
+        display: flex;
+        gap: 0.75rem;
+      }
+      .controls button {
+        padding: 0.5rem 1.15rem;
+        border: 1.5px solid var(--line);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .controls button:hover {
+        border-color: var(--ink);
+      }
+      .qr {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.35;
+      }
+      .qr svg {
+        width: 88px;
+        height: 88px;
+        flex: none;
+      }
+
+      /* Text column */
+      h1 {
+        margin: 0 0 1.25rem;
+        font-size: clamp(4.5rem, 10vw, 8rem);
+        font-weight: 800;
+        font-stretch: 75%;
+        font-variation-settings: 'wdth' 75;
+        line-height: 0.82;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        margin: 2.75rem 0 0.6rem;
+        font-size: 1.3rem;
+        font-weight: 700;
+        line-height: 1.3;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      .lede {
+        font-size: 1.5rem;
+        font-weight: 500;
+        line-height: 1.35;
+      }
+      .status {
+        display: flex;
+        gap: 0.7rem;
+        align-items: baseline;
+        color: var(--ink-soft);
+      }
+      .status::before {
+        content: '';
+        flex: none;
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 0.2rem;
+        background: var(--jelly);
+        transform: translateY(0.05rem);
+      }
+      .play-mobile {
+        display: none;
+        margin-top: 0.5rem;
+        padding: 0.85rem 1.6rem;
+        border-radius: 999px;
+        background: var(--lemon);
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .note {
+        color: var(--ink-soft);
+      }
+
+      .sizes {
+        margin: 1rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .size-row {
+        display: grid;
+        grid-template-columns: 8.5rem minmax(0, 1fr) 9rem;
+        gap: 1rem;
+        align-items: center;
+        padding: 0.45rem 0;
+      }
+      .size-bar {
+        height: 12px;
+        border-radius: 6px;
+        background: var(--line);
+        overflow: hidden;
+      }
+      .size-bar span {
+        display: block;
+        width: var(--fill);
+        min-width: 12px;
+        height: 100%;
+        border-radius: 6px;
+        background: var(--jelly);
+      }
+      .size-bar.no-limit {
+        background: transparent;
+        border: 1.5px dashed var(--line);
+      }
+      .size-value {
+        color: var(--ink-soft);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      footer {
+        margin-top: 3.5rem;
+        padding-top: 1.25rem;
+        border-top: 1.5px solid var(--line);
+        color: var(--ink-soft);
+        font-size: 15px;
+      }
+      footer a {
+        color: var(--ink-soft);
+      }
+
+      @media (max-width: 900px) {
+        .page {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .stage {
+          position: static;
+        }
+        .qr {
+          display: none;
+        }
+        .play-mobile {
+          display: inline-block;
+        }
+        .size-row {
+          grid-template-columns: 8rem minmax(0, 1fr);
+        }
+        .size-value {
+          grid-column: 1 / -1;
+          text-align: left;
+          margin-top: -0.4rem;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .device {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="stage" aria-label="Live playable">
+        <div class="device" id="device">
+          <div class="screen" id="screen">
+            <iframe id="playable" src="play/" title="Jelly Grid playable" allow="autoplay"></iframe>
+          </div>
+        </div>
+        <div class="controls">
+          <button type="button" id="rotate">Rotate phone</button>
+          <button type="button" id="restart">Restart</button>
+        </div>
+        <p class="qr">{{QR_SVG}}<span>Scan to play<br />on your phone</span></p>
+      </section>
+
+      <article>
+        <h1>Jelly Grid</h1>
+        <p class="lede">{{LEDE}}</p>
+        <p class="status">{{STATUS}}</p>
+        <a class="play-mobile" href="play/">Play full screen</a>
+
+        <h2>Try this</h2>
+        <p>{{TRY_THIS}}</p>
+
+        <h2>Build size by network</h2>
+        <p class="note">Each bar is the build measured against that network's upload limit.</p>
+        <ul class="sizes">
+          {{SIZE_ROWS}}
+        </ul>
+
+        <h2>Download builds</h2>
+        <p>Upload-ready files: {{DOWNLOADS}}.</p>
+
+        <h2>How it's built</h2>
+        <p>
+          PixiJS v8 and GSAP in TypeScript, bundled by Vite into one self-contained HTML file per ad network. The game
+          talks to a single adapter interface, which hides MRAID, Google's ExitApi and Meta's FbPlayableAd.
+        </p>
+        <p>
+          The WebGL renderer is created directly and Pixi's unused optional modules are stubbed out at build time, which
+          took the empty scene from 619 KB to 520 KB. GSAP runs on the Pixi ticker, so hiding the ad freezes every
+          animation in one place.
+        </p>
+
+        <footer>Made by {{AUTHOR}}. <a href="{{REPO_URL}}">Source on GitHub</a>. Built {{BUILT_AT}}.</footer>
+      </article>
+    </main>
+
+    <script>
+      (function () {
+        var SCREENS = { portrait: [390, 844], landscape: [844, 390] };
+        var BEZEL = 14;
+        var device = document.getElementById('device');
+        var screenEl = document.getElementById('screen');
+        var iframe = document.getElementById('playable');
+        var stage = document.querySelector('.stage');
+        var orientation = 'portrait';
+
+        // The playable always sees a real phone viewport; only its visual scale changes.
+        function fit() {
+          var size = SCREENS[orientation];
+          var outerW = size[0] + BEZEL * 2;
+          var outerH = size[1] + BEZEL * 2;
+          // Desktop keeps the controls and QR code above the fold.
+          var room = window.innerWidth > 900 ? window.innerHeight - 260 : window.innerHeight * 0.75;
+          var scale = Math.min(1, stage.clientWidth / outerW, Math.max(0.45, room / outerH));
+
+          device.style.width = outerW * scale + 'px';
+          device.style.height = outerH * scale + 'px';
+          device.style.padding = BEZEL * scale + 'px';
+          device.style.borderRadius = 54 * scale + 'px';
+          screenEl.style.borderRadius = 42 * scale + 'px';
+          iframe.style.width = size[0] + 'px';
+          iframe.style.height = size[1] + 'px';
+          iframe.style.transform = 'scale(' + scale + ')';
+        }
+
+        document.getElementById('rotate').addEventListener('click', function () {
+          orientation = orientation === 'portrait' ? 'landscape' : 'portrait';
+          fit();
+        });
+        document.getElementById('restart').addEventListener('click', function () {
+          iframe.src = iframe.src;
+        });
+        window.addEventListener('resize', fit);
+        fit();
+      })();
+    </script>
+  </body>
+</html>

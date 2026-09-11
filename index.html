@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Jelly Grid</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #2a1d45;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+      #app {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+      }
+      #app canvas {
+        display: block;
+      }
+
+      /* Pure CSS loader: visible before any JS is parsed. ironSource requires a loading state. */
+      #loader {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #3a2a5c;
+        transition: opacity 0.25s ease;
+      }
+      #loader.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loader i {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        animation: jelly-hop 0.9s ease-in-out infinite;
+        transform-origin: 50% 100%;
+      }
+      #loader i:nth-child(1) { background: #ff5a7a; }
+      #loader i:nth-child(2) { background: #9be564; animation-delay: 0.12s; }
+      #loader i:nth-child(3) { background: #4fa3ff; animation-delay: 0.24s; }
+      @keyframes jelly-hop {
+        0%, 100% { transform: translateY(0) scale(1, 1); }
+        35% { transform: translateY(-16px) scale(0.9, 1.1); }
+        65% { transform: translateY(0) scale(1.18, 0.82); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #loader i { animation: none; }
+      }
+
+      /* HTML end card for WebGL failure or context loss. */
+      .fallback {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        background: #3a2a5c;
+        font-family: system-ui, -apple-system, Roboto, sans-serif;
+      }
+      .fallback-title {
+        margin: 0;
+        color: #fff1dc;
+        font-size: 44px;
+        font-weight: 800;
+      }
+      .fallback-cta {
+        padding: 18px 48px;
+        border: 0;
+        border-radius: 999px;
+        background: #ffe15a;
+        color: #2a1d45;
+        font: inherit;
+        font-size: 28px;
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="loader" role="status" aria-label="Loading"><i></i><i></i><i></i></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
