@@ -3,8 +3,10 @@ import { Container, Graphics, Sprite, type PointData } from 'pixi.js';
 import { THEME } from '../../config';
 import type { Board } from '../model/Board';
 import type { MoveResult } from '../model/Game';
-import type { GridPos, PieceDef } from '../model/types';
+import type { ColorId, GridPos, PieceDef } from '../model/types';
 import { CELL } from './constants';
+import { JellyBlock } from './JellyBlock';
+import { CLEAR_DELAY, IMPULSE, RIPPLE_DELAY_PER_CELL, RIPPLE_RADIUS } from './jellyTuning';
 import type { GameTextures } from './textures';
 
 const FRAME_PADDING = 14;
@@ -17,13 +19,15 @@ export class BoardView {
   private readonly textures: GameTextures;
   private readonly blocksLayer = new Container();
   private readonly ghostLayer = new Container();
-  private readonly blocks: Array<Sprite | null>;
+  private readonly blocks: Array<JellyBlock | null>;
+  /** Blocks still animating out after a clear: they keep wobbling until destroyed. */
+  private readonly leaving = new Set<JellyBlock>();
 
   constructor(board: Board, textures: GameTextures) {
     this.size = board.size;
     this.textures = textures;
     this.pixelSize = board.size * CELL;
-    this.blocks = new Array<Sprite | null>(board.size * board.size).fill(null);
+    this.blocks = new Array<JellyBlock | null>(board.size * board.size).fill(null);
 
     const frame = new Graphics()
       .roundRect(-FRAME_PADDING, -FRAME_PADDING, this.pixelSize + FRAME_PADDING * 2, this.pixelSize + FRAME_PADDING * 2, 30)
@@ -39,6 +43,10 @@ export class BoardView {
       }
     }
     this.view.addChild(frame, emptyCells, this.ghostLayer, this.blocksLayer);
+  }
+
+  get center(): PointData {
+    return { x: this.pixelSize / 2, y: this.pixelSize / 2 };
   }
 
   cellCenter({ col, row }: GridPos): PointData {
@@ -63,46 +71,92 @@ export class BoardView {
     this.ghostLayer.removeChildren().forEach((child) => child.destroy());
   }
 
-  /** Adds the placed blocks and pops cleared ones in a ripple from the placement. Returns the duration in seconds. */
+  /** @param lookTarget point in board coordinates that every pair of eyes follows */
+  update(dt: number, lookTarget: PointData): void {
+    for (const block of this.blocks) {
+      if (!block) continue;
+      block.lookAt(lookTarget);
+      block.update(dt);
+    }
+    for (const block of this.leaving) block.update(dt);
+  }
+
+  blinkRandom(): void {
+    const alive = this.blocks.filter((block): block is JellyBlock => block !== null);
+    alive[Math.floor(Math.random() * alive.length)]?.blink();
+  }
+
+  /**
+   * Lands the piece with a splat, sends a ripple through nearby blocks and pops cleared lines.
+   * Returns the time in seconds until the board has settled enough for the next beat.
+   */
   applyMove(move: MoveResult): number {
-    for (const { col, row } of move.placed) this.addBlock({ col, row }, move.piece.color);
+    const placed = move.placed.map((at) => {
+      const block = this.addBlock(at, move.piece.color);
+      block.impulse(IMPULSE.land.squash, IMPULSE.land.hop);
+      return block;
+    });
+    this.ripple(move.placed, new Set(placed));
     if (move.clearedCells.length === 0) return 0;
 
     const origin = this.cellCenter(move.placed[0]);
     const cleared = move.clearedCells
       .map((cell) => {
         const index = cell.row * this.size + cell.col;
-        const sprite = this.blocks[index];
+        const block = this.blocks[index];
         this.blocks[index] = null;
-        return sprite;
+        return block;
       })
-      .filter((sprite): sprite is Sprite => sprite !== null)
-      .sort((a, b) => distance(a, origin) - distance(b, origin));
+      .filter((block): block is JellyBlock => block !== null)
+      .sort((a, b) => distance(a.view, origin) - distance(b.view, origin));
 
+    const delay = CLEAR_DELAY;
     const stagger = 0.012;
     const duration = 0.22;
+    cleared.forEach((block) => this.leaving.add(block));
     gsap.to(
-      cleared.map((sprite) => sprite.scale),
-      { x: 0, y: 0, duration, ease: 'back.in(2)', stagger, delay: 0.05 },
+      cleared.map((block) => block.view.scale),
+      { x: 0, y: 0, duration, ease: 'back.in(2)', stagger, delay },
     );
-    gsap.to(cleared, {
-      alpha: 0,
-      duration,
-      stagger,
-      delay: 0.05,
-      onComplete: () => cleared.forEach((sprite) => sprite.destroy()),
-    });
-    return 0.05 + duration + stagger * cleared.length;
+    gsap.to(
+      cleared.map((block) => block.view),
+      {
+        alpha: 0,
+        duration,
+        stagger,
+        delay,
+        onComplete: () =>
+          cleared.forEach((block) => {
+            this.leaving.delete(block);
+            block.destroy();
+          }),
+      },
+    );
+    return delay + duration + stagger * cleared.length;
   }
 
-  private addBlock(at: GridPos, color: number): void {
-    const sprite = new Sprite({ texture: this.textures.blocks[color], anchor: 0.5 });
-    sprite.position.copyFrom(this.cellCenter(at));
-    this.blocksLayer.addChild(sprite);
-    this.blocks[at.row * this.size + at.col] = sprite;
+  /** Neighbours hop and stretch, weaker and later the further they are from the landing. */
+  private ripple(origin: readonly GridPos[], skip: ReadonlySet<JellyBlock>): void {
+    this.blocks.forEach((block, index) => {
+      if (!block || skip.has(block)) return;
+      const col = index % this.size;
+      const row = Math.floor(index / this.size);
+      const cells = Math.min(...origin.map((at) => Math.hypot(at.col - col, at.row - row)));
+      if (cells > RIPPLE_RADIUS) return;
+      const strength = 1 - (cells - 1) / RIPPLE_RADIUS;
+      block.impulse(IMPULSE.ripple.squash * strength, IMPULSE.ripple.hop * strength, cells * RIPPLE_DELAY_PER_CELL);
+    });
+  }
+
+  private addBlock(at: GridPos, color: ColorId): JellyBlock {
+    const block = new JellyBlock(color, this.textures);
+    block.view.position.copyFrom(this.cellCenter(at));
+    this.blocksLayer.addChild(block.view);
+    this.blocks[at.row * this.size + at.col] = block;
+    return block;
   }
 }
 
-function distance(sprite: Sprite, point: PointData): number {
-  return Math.hypot(sprite.x - point.x, sprite.y - point.y);
+function distance(point: PointData, other: PointData): number {
+  return Math.hypot(point.x - other.x, point.y - other.y);
 }

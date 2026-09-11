@@ -3,7 +3,7 @@
 A portfolio playable ad: a block puzzle where the blocks are jelly creatures.
 Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad network.
 
-> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop.
+> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop. Day 3: jelly feel (in progress).
 
 ## Commands
 
@@ -59,6 +59,9 @@ Personal and day-specific copy on the page lives in `showcase/profile.ts`.
   so the board draws in one batch with zero image bytes. Decorative layers opt out of hit testing.
 - `src/scenes/GameScene.ts`: drag and drop. The piece floats above the finger and snaps to the grid; in landscape
   the board shrinks so the bottom row stays reachable with that lift.
+- `src/game/view/JellyBlock.ts` + `spring.ts`: every block sits on two damped springs (squash and hop) integrated
+  on the game clock, so hit-stop freezes them too. Substeps keep the motion identical at 20 and 120 fps (tested).
+- `src/game/view/jellyTuning.ts`: every feel number in one file: impulses, ripple radius and delay, tilt, blink rate.
 - `src/core/fallback.ts`: HTML end card if WebGL fails to start or the context is lost.
 
 ## Asset credits

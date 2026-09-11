@@ -5,6 +5,8 @@ import { BLOCK } from './constants';
 export interface GameTextures {
   /** One texture per ColorId. */
   readonly blocks: readonly Texture[];
+  readonly eyeWhite: Texture;
+  readonly pupil: Texture;
   readonly ghost: Texture;
   readonly emptyCell: Texture;
 }
@@ -26,8 +28,10 @@ export function createGameTextures(renderer: Renderer): GameTextures {
       new Graphics()
         .roundRect(-half, -half, BLOCK, BLOCK, 18)
         .fill(color)
+        .roundRect(-half + 6, half - 20, BLOCK - 12, 14, 7)
+        .fill({ color: 0x000000, alpha: 0.1 }) // soft underside gives the block some volume
         .roundRect(-half + 12, -half + 8, BLOCK * 0.4, 10, 5)
-        .fill({ color: 0xffffff, alpha: 0.35 }),
+        .fill({ color: 0xffffff, alpha: 0.4 }),
     ),
   );
 
@@ -40,5 +44,8 @@ export function createGameTextures(renderer: Renderer): GameTextures {
 
   const emptyCell = bake(new Graphics().roundRect(-half, -half, BLOCK, BLOCK, 16).fill({ color: 0x000000, alpha: 0.18 }));
 
-  return { blocks, ghost, emptyCell };
+  const eyeWhite = bake(new Graphics().circle(0, 0, 10).fill(0xffffff));
+  const pupil = bake(new Graphics().circle(0, 0, 5).fill(THEME.backgroundDeep));
+
+  return { blocks, eyeWhite, pupil, ghost, emptyCell };
 }

@@ -10,6 +10,7 @@ import type { GridPos } from '../game/model/types';
 import { BoardView } from '../game/view/BoardView';
 import { CELL, DRAG_LIFT } from '../game/view/constants';
 import { EndOverlay, type EndReason } from '../game/view/EndOverlay';
+import { BLINK_INTERVAL, DRAG_TILT_MAX, DRAG_TILT_PER_SPEED, IMPULSE } from '../game/view/jellyTuning';
 import { PieceView } from '../game/view/PieceView';
 import { ProgressView } from '../game/view/ProgressView';
 import { createGameTextures } from '../game/view/textures';
@@ -61,6 +62,14 @@ export class GameScene implements Scene {
   private started = false;
   private finished = false;
 
+  /** Last mouse position: on desktop the eyes follow the cursor even without a drag. */
+  private hoverPointer: PointData | null = null;
+  /** Smoothed horizontal drag speed in design units per second, drives the lagging tilt. */
+  private dragSpeedX = 0;
+  private lastMove = { x: 0, time: 0 };
+  private time = 0;
+  private nextBlink = BLINK_INTERVAL;
+
   constructor(deps: GameSceneDeps) {
     this.deps = deps;
     const textures = createGameTextures(deps.renderer);
@@ -91,6 +100,7 @@ export class GameScene implements Scene {
     this.view.on('globalpointermove', (event) => this.onPointerMove(event));
     this.view.on('pointerup', (event) => this.onPointerUp(event));
     deps.session.onTimeout(() => this.finish('timeout', 0));
+    deps.clock.onUpdate((dt) => this.update(dt));
   }
 
   start(): void {
@@ -119,7 +129,6 @@ export class GameScene implements Scene {
       this.progress.resize(440);
       this.slots = [850, 1000, 1150].map((x) => ({ x: safe.x + x, y: safe.y + 420, width: 150, height: 300, scale: 0.5 }));
     }
-
     this.board.view.scale.set(this.boardScale);
 
     this.slots.forEach((slot, index) => {
@@ -133,21 +142,63 @@ export class GameScene implements Scene {
     this.endOverlay.resize(viewWidth, viewHeight, { x: safe.x + safe.width / 2, y: safe.y + safe.height / 2 });
   }
 
+  private update(dt: number): void {
+    this.time += dt;
+    this.dragSpeedX *= Math.exp(-8 * dt); // the tilt relaxes as soon as the finger stops
+
+    // Eyes follow the finger during a drag and the cursor on desktop; otherwise the board watches the tray
+    // and the tray watches the board, which quietly points the player at the next move.
+    const pointer = this.drag?.pointer ?? this.hoverPointer;
+    const trayCenter = this.slots[1] ?? { x: 0, y: 0 };
+    const boardCenter = this.view.toLocal(this.board.center, this.board.view);
+
+    this.board.update(dt, this.board.view.toLocal(pointer ?? trayCenter, this.view));
+
+    this.pieces.forEach((piece, slot) => {
+      if (!piece) return;
+      const dragged = this.drag?.piece === piece;
+      const tilt = dragged ? clamp(-this.dragSpeedX * DRAG_TILT_PER_SPEED, DRAG_TILT_MAX) : 0;
+      const breathe = dragged || this.finished ? 0 : Math.sin(this.time * 2.6 + slot * 1.4);
+      piece.update(dt, pointer ?? boardCenter, this.view, tilt, breathe);
+    });
+
+    this.nextBlink -= dt;
+    if (this.nextBlink <= 0) {
+      this.nextBlink = BLINK_INTERVAL * (0.5 + Math.random());
+      const tray = this.pieces.filter((piece): piece is PieceView => piece !== null);
+      if (tray.length > 0 && Math.random() < 0.25) tray[Math.floor(Math.random() * tray.length)].blinkRandom();
+      else this.board.blinkRandom();
+    }
+  }
+
   private onSlotDown(slot: number, event: FederatedPointerEvent): void {
     const piece = this.pieces[slot];
     if (!this.started || this.finished || this.drag || !piece) return;
 
     gsap.killTweensOf([piece.view, piece.view.scale]);
     this.piecesLayer.addChild(piece.view); // on top of the other pieces
-    this.drag = { slot, pointerId: event.pointerId, pointer: this.view.toLocal(event.global), piece, target: null };
+    const pointer = this.view.toLocal(event.global);
+    this.drag = { slot, pointerId: event.pointerId, pointer, piece, target: null };
+    this.lastMove = { x: pointer.x, time: performance.now() };
+    this.dragSpeedX = 0;
+
+    piece.impulse(IMPULSE.pickUp.squash, IMPULSE.pickUp.hop, 0.02);
     const size = this.boardScale;
     gsap.to(piece.view.scale, { x: size, y: size, duration: 0.12, ease: 'power2.out', onUpdate: () => this.followPointer() });
     this.followPointer();
   }
 
   private onPointerMove(event: FederatedPointerEvent): void {
+    if (event.pointerType === 'mouse') this.hoverPointer = this.view.toLocal(event.global);
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
-    this.drag.pointer = this.view.toLocal(event.global);
+
+    const pointer = this.view.toLocal(event.global);
+    const now = performance.now();
+    const elapsed = Math.max(1, now - this.lastMove.time) / 1000;
+    this.dragSpeedX += ((pointer.x - this.lastMove.x) / elapsed - this.dragSpeedX) * 0.35;
+    this.lastMove = { x: pointer.x, time: now };
+
+    this.drag.pointer = pointer;
     this.followPointer();
   }
 
@@ -164,21 +215,26 @@ export class GameScene implements Scene {
     }
 
     this.pieces[drag.slot] = null;
-    const landing = this.view.toLocal({ x: move.at.col * CELL, y: move.at.row * CELL }, this.board.view);
-    gsap.killTweensOf([drag.piece.view, drag.piece.view.scale]);
+    const { piece } = drag;
+    const landing = this.view.toLocal(
+      { x: move.at.col * CELL + piece.width / 2, y: move.at.row * CELL + piece.height / 2 },
+      this.board.view,
+    );
+    gsap.killTweensOf([piece.view, piece.view.scale]);
     // A quick release can interrupt the pick-up tween, so land at the board scale explicitly.
-    gsap.to(drag.piece.view.scale, { x: this.boardScale, y: this.boardScale, duration: 0.07 });
-    gsap.to(drag.piece.view, {
+    gsap.to(piece.view.scale, { x: this.boardScale, y: this.boardScale, duration: 0.07 });
+    gsap.to(piece.view, {
       x: landing.x,
       y: landing.y,
+      rotation: 0,
       duration: 0.07,
       ease: 'power2.in',
       onComplete: () => {
-        drag.piece.view.destroy({ children: true });
-        const clearTime = this.board.applyMove(move);
+        piece.destroy();
+        const settleTime = this.board.applyMove(move);
         this.progress.setValue(move.collected / this.game.goal);
-        if (move.status === 'won') this.finish('won', clearTime + END_DELAY);
-        if (move.status === 'lost') this.finish('lost', clearTime + END_DELAY);
+        if (move.status === 'won') this.finish('won', settleTime + END_DELAY);
+        if (move.status === 'lost') this.finish('lost', settleTime + END_DELAY);
       },
     });
   }
@@ -189,7 +245,7 @@ export class GameScene implements Scene {
     if (!drag) return;
     const { piece, pointer } = drag;
     const scale = piece.view.scale.x;
-    piece.view.position.set(pointer.x - (piece.width * scale) / 2, pointer.y - (piece.height + DRAG_LIFT) * scale);
+    piece.view.position.set(pointer.x, pointer.y - (piece.height / 2 + DRAG_LIFT) * scale);
 
     // Snap using the footprint at board scale, so the preview doesn't jump while the pick-up tween runs.
     const size = this.boardScale;
@@ -204,15 +260,19 @@ export class GameScene implements Scene {
   private putHome(slot: number, piece: PieceView, duration: number): void {
     const home = this.slots[slot];
     if (!home) return;
-    const x = home.x - (piece.width * home.scale) / 2;
-    const y = home.y - (piece.height * home.scale) / 2;
     gsap.killTweensOf([piece.view, piece.view.scale]);
     if (duration === 0) {
-      piece.view.position.set(x, y);
+      piece.view.position.set(home.x, home.y);
       piece.view.scale.set(home.scale);
       return;
     }
-    gsap.to(piece.view, { x, y, duration, ease: 'back.out(1.6)' });
+    gsap.to(piece.view, {
+      x: home.x,
+      y: home.y,
+      duration,
+      ease: 'back.out(1.6)',
+      onComplete: () => piece.impulse(IMPULSE.bounceBack.squash, IMPULSE.bounceBack.hop),
+    });
     gsap.to(piece.view.scale, { x: home.scale, y: home.scale, duration, ease: 'back.out(1.6)' });
   }
 
@@ -231,4 +291,8 @@ export class GameScene implements Scene {
     this.deps.session.cancelTimeout();
     gsap.delayedCall(delay, () => this.endOverlay.show(reason));
   }
+}
+
+function clamp(value: number, limit: number): number {
+  return Math.max(-limit, Math.min(limit, value));
 }

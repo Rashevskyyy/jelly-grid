@@ -5,7 +5,7 @@ export const PROFILE = {
   repoUrl: 'https://github.com/your-name/jelly-grid',
   lede: 'A playable ad for a block puzzle where every block is a jelly creature that watches your finger.',
   status:
-    'Work in progress, day 2 of 6. The puzzle is playable with placeholder blocks; the jelly feel arrives next.',
+    'Work in progress, day 3 of 6. The blocks are alive: springs, eyes and ripples. The line-clear payoff arrives next.',
   tryThis:
-    'Drag the green bar into the gap in the bottom row, then fill the other two holes. For the other ending, drop a piece somewhere useless first. Pieces snap to the grid and bounce back from blocked spots, and the layout rebuilds when you rotate the phone.',
+    'Move the cursor over the board and every block follows it with its eyes. Pick up a piece and swing it: it lags and tilts like jelly. Drop it into a gap and watch the neighbours hop. Drop a piece onto blocked cells to see it bounce back.',
 } as const;

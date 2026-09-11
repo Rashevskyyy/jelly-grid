@@ -13,14 +13,22 @@ export class GameClock {
   timeScale = 1;
   private elapsed = 0;
   private frozenUntil = 0;
+  private readonly listeners: Array<(dt: number) => void> = [];
 
   constructor(ticker: Ticker) {
     gsap.ticker.remove(gsap.updateRoot);
     ticker.add(({ deltaMS }) => {
       const scale = performance.now() < this.frozenUntil ? 0 : this.timeScale;
-      this.elapsed += Math.min(deltaMS / 1000, MAX_FRAME_SECONDS) * scale;
+      const dt = Math.min(deltaMS / 1000, MAX_FRAME_SECONDS) * scale;
+      this.elapsed += dt;
       gsap.updateRoot(this.elapsed);
+      for (const listener of this.listeners) listener(dt);
     });
+  }
+
+  /** Per-frame game-time delta in seconds. Frozen by hit-stop and slowed by `timeScale`, like the tweens. */
+  onUpdate(listener: (dt: number) => void): void {
+    this.listeners.push(listener);
   }
 
   /** Freeze all tweens for a few real-time milliseconds: the classic impact pause. */
