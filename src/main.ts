@@ -5,7 +5,7 @@ import { showFallbackEndCard } from './core/fallback';
 import { computeLayout } from './core/layout';
 import { Session } from './core/session';
 import { createNetwork, MRAID_NETWORKS } from './network';
-import { DebugScene } from './scenes/DebugScene';
+import { GameScene } from './scenes/GameScene';
 
 function hideLoader(): void {
   const loader = document.getElementById('loader');
@@ -46,7 +46,7 @@ async function boot(): Promise<void> {
   const root = new Container();
   app.stage.addChild(root);
 
-  const scene = new DebugScene({ network, session, clock });
+  const scene = new GameScene({ network, session, clock, renderer: app.renderer });
   root.addChild(scene.view);
 
   const applySize = (): void => {
@@ -61,7 +61,6 @@ async function boot(): Promise<void> {
 
   // Stopping the ticker also freezes GSAP, because GameClock drives it.
   network.onVisibilityChange((visible) => (visible ? app.ticker.start() : app.ticker.stop()));
-  session.onTimeout(() => console.info('[session] time limit reached: the end card goes here (day 5)'));
 
   hideLoader();
 

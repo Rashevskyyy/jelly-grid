@@ -5,7 +5,7 @@ export const PROFILE = {
   repoUrl: 'https://github.com/your-name/jelly-grid',
   lede: 'A playable ad for a block puzzle where every block is a jelly creature that watches your finger.',
   status:
-    'Work in progress, day 1 of 6. The ad container, layout and store exit work; the puzzle itself arrives next.',
+    'Work in progress, day 2 of 6. The puzzle is playable with placeholder blocks; the jelly feel arrives next.',
   tryThis:
-    'Rotate the phone and watch the layout rebuild. Tap the block to squash it. Then press Restart and make Play now your very first tap: ad networks forbid leaving the ad on the first touch, so the button only wiggles.',
+    'Drag the green bar into the gap in the bottom row, then fill the other two holes. For the other ending, drop a piece somewhere useless first. Pieces snap to the grid and bounce back from blocked spots, and the layout rebuilds when you rotate the phone.',
 } as const;

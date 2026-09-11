@@ -3,7 +3,7 @@
 A portfolio playable ad: a block puzzle where the blocks are jelly creatures.
 Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad network.
 
-> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model (in progress).
+> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop.
 
 ## Commands
 
@@ -55,6 +55,10 @@ Personal and day-specific copy on the page lives in `showcase/profile.ts`.
   describing everything that happened, and the view only animates that data.
 - `src/game/levels/level1.ts` + its test: the scripted session. Tests guarantee that intended moves clear 1, 2
   and 3 lines, that the jar fills only on the last one, and that a wasted move ends in a near miss.
+- `src/game/view/`: board, pieces and tray in Pixi. Blocks are sprites sharing textures baked once at startup,
+  so the board draws in one batch with zero image bytes. Decorative layers opt out of hit testing.
+- `src/scenes/GameScene.ts`: drag and drop. The piece floats above the finger and snaps to the grid; in landscape
+  the board shrinks so the bottom row stays reachable with that lift.
 - `src/core/fallback.ts`: HTML end card if WebGL fails to start or the context is lost.
 
 ## Asset credits
