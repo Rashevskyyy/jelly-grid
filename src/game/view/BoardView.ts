@@ -6,10 +6,27 @@ import type { MoveResult } from '../model/Game';
 import type { ColorId, GridPos, PieceDef } from '../model/types';
 import { CELL } from './constants';
 import { JellyBlock } from './JellyBlock';
-import { CLEAR_DELAY, IMPULSE, RIPPLE_DELAY_PER_CELL, RIPPLE_RADIUS } from './jellyTuning';
+import { CLEAR_DELAY, FLIGHT, IMPULSE, RIPPLE_DELAY_PER_CELL, RIPPLE_RADIUS } from './jellyTuning';
 import type { GameTextures } from './textures';
 
 const FRAME_PADDING = 14;
+
+export interface PoppedBlock {
+  /** Centre of the cleared cell in board coordinates. */
+  position: PointData;
+  color: ColorId;
+  /** Seconds after the landing when this block pops. */
+  delay: number;
+}
+
+export interface MovePlayback {
+  /** Seconds until the landing and every pop have finished. */
+  settle: number;
+  /** Seconds after the landing when the first line pops. Zero if nothing was cleared. */
+  clearAt: number;
+  /** Cleared blocks in pop order, nearest to the landing first. */
+  popped: PoppedBlock[];
+}
 
 /** Renders board state and plays back MoveResults. Origin is the top-left corner of cell 0,0. */
 export class BoardView {
@@ -88,16 +105,16 @@ export class BoardView {
 
   /**
    * Lands the piece with a splat, sends a ripple through nearby blocks and pops cleared lines.
-   * Returns the time in seconds until the board has settled enough for the next beat.
+   * Returns timings and the popped blocks, so the scene can launch particles and screen effects in sync.
    */
-  applyMove(move: MoveResult): number {
+  applyMove(move: MoveResult): MovePlayback {
     const placed = move.placed.map((at) => {
       const block = this.addBlock(at, move.piece.color);
       block.impulse(IMPULSE.land.squash, IMPULSE.land.hop);
       return block;
     });
     this.ripple(move.placed, new Set(placed));
-    if (move.clearedCells.length === 0) return 0;
+    if (move.clearedCells.length === 0) return { settle: 0, clearAt: 0, popped: [] };
 
     const origin = this.cellCenter(move.placed[0]);
     const cleared = move.clearedCells
@@ -105,34 +122,43 @@ export class BoardView {
         const index = cell.row * this.size + cell.col;
         const block = this.blocks[index];
         this.blocks[index] = null;
-        return block;
+        return block ? { block, color: cell.color } : null;
       })
-      .filter((block): block is JellyBlock => block !== null)
-      .sort((a, b) => distance(a.view, origin) - distance(b.view, origin));
+      .filter((entry): entry is { block: JellyBlock; color: ColorId } => entry !== null)
+      .sort((a, b) => distance(a.block.view, origin) - distance(b.block.view, origin));
 
-    const delay = CLEAR_DELAY;
-    const stagger = 0.012;
     const duration = 0.22;
-    cleared.forEach((block) => this.leaving.add(block));
+    const blocks = cleared.map(({ block }) => block);
+    blocks.forEach((block) => this.leaving.add(block));
     gsap.to(
-      cleared.map((block) => block.view.scale),
-      { x: 0, y: 0, duration, ease: 'back.in(2)', stagger, delay },
+      blocks.map((block) => block.view.scale),
+      { x: 0, y: 0, duration, ease: 'back.in(2)', stagger: FLIGHT.stagger, delay: CLEAR_DELAY },
     );
     gsap.to(
-      cleared.map((block) => block.view),
+      blocks.map((block) => block.view),
       {
         alpha: 0,
         duration,
-        stagger,
-        delay,
+        stagger: FLIGHT.stagger,
+        delay: CLEAR_DELAY,
         onComplete: () =>
-          cleared.forEach((block) => {
+          blocks.forEach((block) => {
             this.leaving.delete(block);
             block.destroy();
           }),
       },
     );
-    return delay + duration + stagger * cleared.length;
+
+    return {
+      settle: CLEAR_DELAY + duration + FLIGHT.stagger * blocks.length,
+      clearAt: CLEAR_DELAY,
+      popped: cleared.map(({ block, color }, index) => ({
+        position: { x: block.view.x, y: block.view.y },
+        color,
+        // Particles take off as their block shrinks away, so the pop hands over to the flight.
+        delay: CLEAR_DELAY + index * FLIGHT.stagger + duration * 0.5,
+      })),
+    };
   }
 
   /** Neighbours hop and stretch, weaker and later the further they are from the landing. */

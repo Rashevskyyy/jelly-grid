@@ -5,14 +5,26 @@ import type { GameClock } from '../core/clock';
 import type { Layout } from '../core/layout';
 import type { Session } from '../core/session';
 import { LEVEL_1 } from '../game/levels/level1';
-import { Game } from '../game/model/Game';
+import { Game, type MoveResult } from '../game/model/Game';
 import type { GridPos } from '../game/model/types';
-import { BoardView } from '../game/view/BoardView';
+import { BoardView, type MovePlayback } from '../game/view/BoardView';
+import { ComboText } from '../game/view/ComboText';
 import { CELL, DRAG_LIFT } from '../game/view/constants';
 import { EndOverlay, type EndReason } from '../game/view/EndOverlay';
-import { BLINK_INTERVAL, DRAG_TILT_MAX, DRAG_TILT_PER_SPEED, IMPULSE } from '../game/view/jellyTuning';
+import { JarView } from '../game/view/JarView';
+import {
+  BLINK_INTERVAL,
+  comboFor,
+  COMBO,
+  DRAG_TILT_MAX,
+  DRAG_TILT_PER_SPEED,
+  IMPULSE,
+  SHAKE,
+  WATCH_JAR_SECONDS,
+} from '../game/view/jellyTuning';
+import { addTrauma, stepShake, type ShakeState } from '../game/view/motion';
+import { ParticleFlight } from '../game/view/ParticleFlight';
 import { PieceView } from '../game/view/PieceView';
-import { ProgressView } from '../game/view/ProgressView';
 import { createGameTextures } from '../game/view/textures';
 import type { AdNetwork } from '../network';
 import type { Scene } from './Scene';
@@ -24,7 +36,7 @@ export interface GameSceneDeps {
   renderer: Renderer;
 }
 
-/** Tray slot in scene coordinates: centre, touch area and the scale pieces rest at. */
+/** Tray slot in world coordinates: centre, touch area and the scale pieces rest at. */
 interface SlotLayout {
   x: number;
   y: number;
@@ -41,19 +53,29 @@ interface DragState {
   target: GridPos | null;
 }
 
-/** Pause between the last move's animation and the end screen, in seconds. */
-const END_DELAY = 0.45;
+/** Pause between the last particle landing and the end screen, in seconds. */
+const END_DELAY = 0.35;
 
+/**
+ * Scene graph:
+ *   view (input hit area)
+ *   ├─ world (shakes)  backdrop, board, jar, tray slots, pieces, particles, combo text
+ *   └─ endOverlay      stays still while the world shakes
+ * All gameplay coordinates are in `world` space.
+ */
 export class GameScene implements Scene {
   readonly view = new Container();
+  private readonly world = new Container();
   private readonly deps: GameSceneDeps;
   private readonly game = new Game(LEVEL_1);
   private readonly backdrop = new Graphics();
   private readonly board: BoardView;
-  private readonly progress = new ProgressView();
+  private readonly jar = new JarView();
   private readonly slotAreas: Container[] = [];
   private readonly pieces: Array<PieceView | null>;
   private readonly piecesLayer = new Container();
+  private readonly particles: ParticleFlight;
+  private readonly combo = new ComboText();
   private readonly endOverlay: EndOverlay;
   private slots: SlotLayout[] = [];
   /** Board and dragged pieces share this scale. Landscape shrinks it to leave room for the drag lift. */
@@ -69,12 +91,18 @@ export class GameScene implements Scene {
   private lastMove = { x: 0, time: 0 };
   private time = 0;
   private nextBlink = BLINK_INTERVAL;
+  private watchJarFor = 0;
+  private readonly shake: ShakeState = { trauma: 0, time: 0 };
+  private screenCenter = { x: 0, y: 0 };
+  /** Cells shown in the jar. Lags behind the model while particles are in the air. */
+  private jarCount = 0;
 
   constructor(deps: GameSceneDeps) {
     this.deps = deps;
     const textures = createGameTextures(deps.renderer);
 
     this.board = new BoardView(this.game.board, textures);
+    this.particles = new ParticleFlight(textures);
     this.pieces = this.game.tray.map((piece) => (piece ? new PieceView(piece, textures) : null));
     this.endOverlay = new EndOverlay(() => {
       if (deps.session.canOpenStore) deps.network.openStore();
@@ -83,8 +111,9 @@ export class GameScene implements Scene {
     // Only the tray slots and the end overlay take input. Everything decorative is excluded from hit testing:
     // otherwise a block sprite under the finger resolves to the scene and the slot never sees the tap.
     this.view.eventMode = 'static';
-    for (const layer of [this.backdrop, this.board.view, this.progress.view, this.piecesLayer]) layer.eventMode = 'none';
-    this.view.addChild(this.backdrop, this.board.view, this.progress.view);
+    for (const layer of [this.backdrop, this.board.view, this.jar.view, this.piecesLayer]) layer.eventMode = 'none';
+
+    this.world.addChild(this.backdrop, this.board.view, this.jar.view);
     this.pieces.forEach((piece, slot) => {
       const area = new Container();
       area.eventMode = 'static';
@@ -92,10 +121,11 @@ export class GameScene implements Scene {
       area.on('pointerdown', (event) => this.onSlotDown(slot, event));
       area.on('pointerupoutside', (event) => this.onPointerUp(event));
       this.slotAreas.push(area);
-      this.view.addChild(area);
+      this.world.addChild(area);
       if (piece) this.piecesLayer.addChild(piece.view);
     });
-    this.view.addChild(this.piecesLayer, this.endOverlay.view);
+    this.world.addChild(this.piecesLayer, this.particles.view, this.combo.view);
+    this.view.addChild(this.world, this.endOverlay.view);
 
     this.view.on('globalpointermove', (event) => this.onPointerMove(event));
     this.view.on('pointerup', (event) => this.onPointerUp(event));
@@ -111,23 +141,28 @@ export class GameScene implements Scene {
     this.cancelDrag();
     const { safe, portrait, viewWidth, viewHeight } = layout;
 
-    this.backdrop.clear().rect(0, 0, viewWidth, viewHeight).fill(THEME.background);
+    // The world shakes around the screen centre, so rotation never swings from a corner.
+    this.screenCenter = { x: viewWidth / 2, y: viewHeight / 2 };
+    this.world.pivot.copyFrom(this.screenCenter);
+    this.world.position.copyFrom(this.screenCenter);
+
+    // Oversized backdrop: a shaking world never reveals an edge.
+    const bleed = SHAKE.maxOffset * 4;
+    this.backdrop.clear().rect(-bleed, -bleed, viewWidth + bleed * 2, viewHeight + bleed * 2).fill(THEME.background);
     this.view.hitArea = new Rectangle(0, 0, viewWidth, viewHeight); // releases anywhere on screen reach onPointerUp
 
     if (portrait) {
       this.boardScale = 1;
-      this.board.view.position.set(safe.x + (safe.width - this.board.pixelSize) / 2, safe.y + 210);
-      this.progress.view.position.set(safe.x + 80, safe.y + 100);
-      this.progress.resize(safe.width - 160);
-      this.slots = [130, 360, 590].map((x) => ({ x: safe.x + x, y: safe.y + 1040, width: 220, height: 260, scale: 0.6 }));
+      this.board.view.position.set(safe.x + (safe.width - this.board.pixelSize) / 2, safe.y + 220);
+      this.jar.view.position.set(safe.x + safe.width / 2, safe.y + 180);
+      this.slots = [130, 360, 590].map((x) => ({ x: safe.x + x, y: safe.y + 1050, width: 220, height: 260, scale: 0.6 }));
     } else {
       // The finger sits DRAG_LIFT below a dragged piece, so the bottom row needs that much free space under the board.
       this.boardScale = 0.8;
       const boardSize = this.board.pixelSize * this.boardScale;
       this.board.view.position.set(safe.x + 90, safe.y + (safe.height - boardSize) / 2);
-      this.progress.view.position.set(safe.x + 780, safe.y + 110);
-      this.progress.resize(440);
-      this.slots = [850, 1000, 1150].map((x) => ({ x: safe.x + x, y: safe.y + 420, width: 150, height: 300, scale: 0.5 }));
+      this.jar.view.position.set(safe.x + 1000, safe.y + 230);
+      this.slots = [850, 1000, 1150].map((x) => ({ x: safe.x + x, y: safe.y + 440, width: 150, height: 300, scale: 0.5 }));
     }
     this.board.view.scale.set(this.boardScale);
 
@@ -145,21 +180,30 @@ export class GameScene implements Scene {
   private update(dt: number): void {
     this.time += dt;
     this.dragSpeedX *= Math.exp(-8 * dt); // the tilt relaxes as soon as the finger stops
+    this.watchJarFor = Math.max(0, this.watchJarFor - dt);
 
-    // Eyes follow the finger during a drag and the cursor on desktop; otherwise the board watches the tray
-    // and the tray watches the board, which quietly points the player at the next move.
+    const offset = stepShake(this.shake, SHAKE, dt);
+    this.world.position.set(this.screenCenter.x + offset.x, this.screenCenter.y + offset.y);
+    this.world.rotation = offset.rotation;
+
+    // Eyes follow the finger during a drag and the cursor on desktop. Right after a clear everyone watches
+    // the particles fly into the jar. Otherwise the board watches the tray and the tray watches the board,
+    // which quietly points the player at the next move.
     const pointer = this.drag?.pointer ?? this.hoverPointer;
-    const trayCenter = this.slots[1] ?? { x: 0, y: 0 };
-    const boardCenter = this.view.toLocal(this.board.center, this.board.view);
+    const jarMouth = this.jarMouth();
+    const boardCenter = this.world.toLocal(this.board.center, this.board.view);
+    const trayCenter = this.slots[1] ?? boardCenter;
+    const watching = this.watchJarFor > 0 && !this.drag ? jarMouth : null;
 
-    this.board.update(dt, this.board.view.toLocal(pointer ?? trayCenter, this.view));
+    this.board.update(dt, this.board.view.toLocal(watching ?? pointer ?? trayCenter, this.world));
+    this.jar.update(dt);
 
     this.pieces.forEach((piece, slot) => {
       if (!piece) return;
       const dragged = this.drag?.piece === piece;
       const tilt = dragged ? clamp(-this.dragSpeedX * DRAG_TILT_PER_SPEED, DRAG_TILT_MAX) : 0;
       const breathe = dragged || this.finished ? 0 : Math.sin(this.time * 2.6 + slot * 1.4);
-      piece.update(dt, pointer ?? boardCenter, this.view, tilt, breathe);
+      piece.update(dt, watching ?? pointer ?? boardCenter, this.world, tilt, breathe);
     });
 
     this.nextBlink -= dt;
@@ -177,7 +221,7 @@ export class GameScene implements Scene {
 
     gsap.killTweensOf([piece.view, piece.view.scale]);
     this.piecesLayer.addChild(piece.view); // on top of the other pieces
-    const pointer = this.view.toLocal(event.global);
+    const pointer = this.world.toLocal(event.global);
     this.drag = { slot, pointerId: event.pointerId, pointer, piece, target: null };
     this.lastMove = { x: pointer.x, time: performance.now() };
     this.dragSpeedX = 0;
@@ -189,10 +233,10 @@ export class GameScene implements Scene {
   }
 
   private onPointerMove(event: FederatedPointerEvent): void {
-    if (event.pointerType === 'mouse') this.hoverPointer = this.view.toLocal(event.global);
+    if (event.pointerType === 'mouse') this.hoverPointer = this.world.toLocal(event.global);
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
 
-    const pointer = this.view.toLocal(event.global);
+    const pointer = this.world.toLocal(event.global);
     const now = performance.now();
     const elapsed = Math.max(1, now - this.lastMove.time) / 1000;
     this.dragSpeedX += ((pointer.x - this.lastMove.x) / elapsed - this.dragSpeedX) * 0.35;
@@ -216,7 +260,7 @@ export class GameScene implements Scene {
 
     this.pieces[drag.slot] = null;
     const { piece } = drag;
-    const landing = this.view.toLocal(
+    const landing = this.world.toLocal(
       { x: move.at.col * CELL + piece.width / 2, y: move.at.row * CELL + piece.height / 2 },
       this.board.view,
     );
@@ -231,12 +275,45 @@ export class GameScene implements Scene {
       ease: 'power2.in',
       onComplete: () => {
         piece.destroy();
-        const settleTime = this.board.applyMove(move);
-        this.progress.setValue(move.collected / this.game.goal);
-        if (move.status === 'won') this.finish('won', settleTime + END_DELAY);
-        if (move.status === 'lost') this.finish('lost', settleTime + END_DELAY);
+        this.playMove(move, this.board.applyMove(move));
       },
     });
+  }
+
+  /** Everything after a piece lands: combo feedback, particles to the jar, and the end of the game. */
+  private playMove(move: MoveResult, playback: MovePlayback): void {
+    let endsIn = playback.settle;
+
+    if (move.lines > 0) {
+      const combo = comboFor(move.lines);
+      const strength = (move.lines - 1) / (COMBO.length - 1);
+      const center = this.clearedCenter(playback);
+
+      gsap.delayedCall(playback.clearAt, () => {
+        if (combo.hitStopMs > 0) this.deps.clock.hitStop(combo.hitStopMs);
+        addTrauma(this.shake, combo.trauma);
+        this.combo.show(combo.label, center, strength);
+        this.watchJarFor = WATCH_JAR_SECONDS;
+      });
+
+      const requests = playback.popped.map(({ position, color, delay }) => ({
+        from: this.world.toLocal(position, this.board.view),
+        color,
+        delay,
+      }));
+      const flight = this.particles.launch(requests, () => this.jarMouth(), () => {
+        this.jarCount += 1;
+        this.jar.setLevel(this.jarCount / this.game.goal);
+        this.jar.bump();
+      });
+      endsIn = Math.max(endsIn, flight);
+    }
+
+    if (move.status === 'won') {
+      gsap.delayedCall(endsIn, () => this.jar.celebrate());
+      this.finish('won', endsIn + END_DELAY);
+    }
+    if (move.status === 'lost') this.finish('lost', endsIn + END_DELAY);
   }
 
   /** Keeps the dragged piece floating above the finger and updates the drop preview. */
@@ -250,7 +327,7 @@ export class GameScene implements Scene {
     // Snap using the footprint at board scale, so the preview doesn't jump while the pick-up tween runs.
     const size = this.boardScale;
     const topLeft = { x: pointer.x - (piece.width * size) / 2, y: pointer.y - (piece.height + DRAG_LIFT) * size };
-    const at = this.board.snap(this.board.view.toLocal(topLeft, this.view));
+    const at = this.board.snap(this.board.view.toLocal(topLeft, this.world));
     const valid = this.game.canPlace(drag.slot, at);
     drag.target = valid ? at : null;
     if (valid) this.board.showGhost(piece.piece, at);
@@ -290,6 +367,25 @@ export class GameScene implements Scene {
     this.cancelDrag();
     this.deps.session.cancelTimeout();
     gsap.delayedCall(delay, () => this.endOverlay.show(reason));
+  }
+
+  private jarMouth(): PointData {
+    return this.world.toLocal(this.jar.mouth, this.jar.view);
+  }
+
+  /** Middle of the cleared cells in world space, nudged up so the label sits above the action. */
+  private clearedCenter(playback: MovePlayback): PointData {
+    const sum = playback.popped.reduce((acc, { position }) => ({ x: acc.x + position.x, y: acc.y + position.y }), {
+      x: 0,
+      y: 0,
+    });
+    const count = Math.max(1, playback.popped.length);
+    const local = { x: sum.x / count, y: sum.y / count - CELL * 0.5 };
+    const center = this.world.toLocal(local, this.board.view);
+    // Keep the label on the board horizontally even when a whole column is cleared at an edge.
+    const left = this.world.toLocal({ x: CELL * 2, y: 0 }, this.board.view).x;
+    const right = this.world.toLocal({ x: this.board.pixelSize - CELL * 2, y: 0 }, this.board.view).x;
+    return { x: Math.max(left, Math.min(right, center.x)), y: center.y };
   }
 }
 

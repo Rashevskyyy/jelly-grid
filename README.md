@@ -3,7 +3,7 @@
 A portfolio playable ad: a block puzzle where the blocks are jelly creatures.
 Built with PixiJS v8, GSAP and TypeScript, packaged as a single HTML file per ad network.
 
-> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop. Day 3: jelly feel (in progress).
+> Work in progress. Day 1: skeleton, network adapters, build pipeline, showcase. Day 2: game model with tests, board and drag and drop. Day 3: jelly feel and line-clear payoff.
 
 ## Commands
 
@@ -62,6 +62,12 @@ Personal and day-specific copy on the page lives in `showcase/profile.ts`.
 - `src/game/view/JellyBlock.ts` + `spring.ts`: every block sits on two damped springs (squash and hop) integrated
   on the game clock, so hit-stop freezes them too. Substeps keep the motion identical at 20 and 120 fps (tested).
 - `src/game/view/jellyTuning.ts`: every feel number in one file: impulses, ripple radius and delay, tilt, blink rate.
+- `src/game/view/motion.ts`: pure, tested math for the particle arc (quadratic Bézier) and trauma-based
+  screen shake, where intensity is trauma squared so small clears barely move and triples really kick.
+- `src/game/view/ParticleFlight.ts`: cleared blocks fly to the jar from a sprite pool; the target is a function,
+  so particles still land if the phone rotates mid-flight.
+- `src/game/view/ComboText.ts`: labels are created and rasterised at startup, so a combo never hitches.
+- Scene graph splits a shaking `world` from the still end overlay; hit-stop and shake both run on the game clock.
 - `src/core/fallback.ts`: HTML end card if WebGL fails to start or the context is lost.
 
 ## Asset credits
